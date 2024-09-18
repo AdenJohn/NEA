@@ -16,10 +16,10 @@ def create_tables():
         create_user_table = """CREATE TABLE IF NOT EXISTS Users(
             id SERIAL PRIMARY KEY,
             employee_code VARCHAR(50) UNIQUE NOT NULL,
-            first_name VARCHAR(100) UNIQUE NOT NULL,
-            last_name VARCHAR(100) UNIQUE NOT NULL, 
+            first_name VARCHAR(100) NOT NULL,
+            last_name VARCHAR(100) NOT NULL, 
             email VARCHAR(100) UNIQUE NOT NULL,
-            password VARCHAR(255) UNIQUE NOT NULL
+            password VARCHAR(255) NOT NULL
             );"""
             
         cursor.execute(create_user_table)
