@@ -52,7 +52,10 @@ class Application(ttk.Window):
         for widget in self.winfo_children(): 
             widget.destroy()
             
-        frame = ttk.Frame()
+        self.geometry("500x500")
+        self.title("Register")
+            
+        frame = ttk.Frame(self)
         frame.pack(pady=10)
         
         self.label_register_empcode = ttk.Label(frame, text="Employee Code", width=15)
@@ -88,7 +91,7 @@ class Application(ttk.Window):
         self.button_register_register = ttk.Button(frame, text="Register", command=self.register_user)
         self.button_register_register.grid(row=5, column=1, padx=10, pady=10)
         
-        self.button_register_homepage = ttk.Button(frame, text="Home", command=self.widgets)
+        self.button_register_homepage = ttk.Button(frame, text="Back", command=self.widgets)
         self.button_register_homepage.grid(row=5, column=0, sticky="E")
         
     def register_user(self): 
@@ -156,7 +159,7 @@ class Application(ttk.Window):
         self.button_login_login = ttk.Button(frame, text="Login", command=self.auth_userlogin)
         self.button_login_login.grid(row=3, column=1, padx=10, pady=10)
         
-        self.button_login_homepage = ttk.Button(frame, text="Home", command=self.widgets)
+        self.button_login_homepage = ttk.Button(frame, text="Back", command=self.widgets)
         self.button_login_homepage.grid(row=3, column=0, sticky="E")
 
     def auth_userlogin(self): 
@@ -196,16 +199,48 @@ class Application(ttk.Window):
         for widget in self.winfo_children(): 
             widget.destroy()
             
-        frame = ttk.Frame()
-        frame.pack(pady=10)
+        self.user = user
         
-        self.label_main_welcome = ttk.Label(frame, text=f"Welcome, {user[2]} {user[3]}")
-        self.label_main_welcome.grid(row=1, column=0, pady=10)
+        self.geometry("2000x1000")
+        self.title("Home Page")
+        
+        self.navigation_frame = ttk.Frame(self)
+        self.navigation_frame.pack(side=TOP, fill=X)
+        
+        self.content_frame = ttk.Frame(self)
+        self.content_frame.pack(fill=BOTH, expand=True)
+        
+        self.button_main_logout = ttk.Button(self.navigation_frame, text="Logout", command=self.widgets)
+        self.button_main_logout.pack(side=LEFT, padx=5, pady=5)
+        
+        self.button_main_home = ttk.Button(self.navigation_frame, text="Home", command=lambda: self.show_main_window)
+        self.button_main_home.pack(side=LEFT, padx=5, pady=5)
+        
+        self.label_main_welcome = ttk.Label(self.content_frame, text=f"Welcome {self.user[2]} {self.user[3]}", bootstyle=DANGER)
+        self.label_main_welcome.pack(pady=10)
+        
+        self.button_main_products = ttk.Button(self.content_frame, text="Products", command=None)
+        self.button_main_products.pack(pady=10)
+        
+        self.button_main_inventory = ttk.Button(self.content_frame, text="Inventory", command=None)
+        self.button_main_inventory.pack(pady=10)
+        
+    def show_products(self): #shows all products and has a thing at the 
+        
+        for widget in self.content_frame.winfo_children(): 
+            widget.destroy()
+            
+            
+        self.title("Products")
+        
+        self.button_products_add = ttk.Button(self.content_frame, text="Add Product", command=None)
+        self.button_products_add.pack(side=RIGHT, padx=5, pady=5)
+        
+        self.display_products()
         
         
-        self.button_main_logout = ttk.Button(frame, text="Logout", command=self.widgets)
-        self.button_main_logout.grid(row=0, column=0, padx=10, pady=10)
-
+    def display_products(self):
+        pass 
         
 if __name__ == "__main__":
     NEA_tables.create_tables()
