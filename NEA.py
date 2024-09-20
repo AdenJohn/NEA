@@ -22,7 +22,7 @@ def database_connection():
 class Application(ttk.Window):
     def __init__(self): 
         super().__init__(title = "Sales Order Processing System")
-        self.geometry("500x500")
+        self.geometry("900x400")
         
         self.conn = database_connection()
         
@@ -52,7 +52,7 @@ class Application(ttk.Window):
         for widget in self.winfo_children(): 
             widget.destroy()
             
-        self.geometry("500x500")
+        self.geometry("900x400")
         self.title("Register")
             
         frame = ttk.Frame(self)
@@ -138,7 +138,7 @@ class Application(ttk.Window):
         frame = ttk.Frame()
         frame.pack(pady=10)
         
-        self.label_login_empcode = ttk.Label(frame, text="Employee Code", width=15)
+        self.label_login_empcode = ttk.Label(frame, text="Employee Code")
         self.label_login_empcode.grid(row=0, column=0, padx=10, pady=10, sticky="E")
         
         self.entry_login_empcode = ttk.Entry(frame)
@@ -201,7 +201,7 @@ class Application(ttk.Window):
             
         self.user = user
         
-        self.geometry("2000x1000")
+        self.geometry("900x400")
         self.title("Home Page")
         
         self.navigation_frame = ttk.Frame(self)
@@ -213,17 +213,29 @@ class Application(ttk.Window):
         self.button_main_logout = ttk.Button(self.navigation_frame, text="Logout", command=self.widgets)
         self.button_main_logout.pack(side=LEFT, padx=5, pady=5)
         
-        self.button_main_home = ttk.Button(self.navigation_frame, text="Home", command=lambda: self.show_main_window)
+        self.button_main_home = ttk.Button(self.navigation_frame, text="Home", command=self.show_home)
         self.button_main_home.pack(side=LEFT, padx=5, pady=5)
         
-        self.label_main_welcome = ttk.Label(self.content_frame, text=f"Welcome {self.user[2]} {self.user[3]}", bootstyle=DANGER)
+        self.label_main_welcome = ttk.Label(self.content_frame, text=f"Welcome {self.user[2]} {self.user[3]}")
         self.label_main_welcome.pack(pady=10)
         
-        self.button_main_products = ttk.Button(self.content_frame, text="Products", command=None)
-        self.button_main_products.pack(pady=10)
+        self.button_main_products = ttk.Button(self.navigation_frame, text="Products", command=self.show_products)
+        self.button_main_products.pack(side=LEFT, padx= 5, pady=5)
         
-        self.button_main_inventory = ttk.Button(self.content_frame, text="Inventory", command=None)
-        self.button_main_inventory.pack(pady=10)
+        self.button_main_inventory = ttk.Button(self.navigation_frame, text="Inventory", command=None)
+        self.button_main_inventory.pack(side=LEFT, padx= 5, pady=5)
+        
+        self.show_home()
+        
+    def show_home(self): 
+        
+        for widget in self.content_frame.winfo_children(): 
+            widget.destroy()
+            
+        self.title("Home Page")
+        
+        self.label_home_welcome = ttk.Label(self.content_frame, text=f"Welcome {self.user[2]} {self.user[3]}")
+        self.label_home_welcome.pack(pady=10)
         
     def show_products(self): #shows all products and has a thing at the 
         
@@ -233,24 +245,115 @@ class Application(ttk.Window):
             
         self.title("Products")
         
-        self.button_products_add = ttk.Button(self.content_frame, text="Add Product", command=None)
-        self.button_products_add.pack(side=RIGHT, padx=5, pady=5)
+        self.button_products_add = ttk.Button(self.content_frame, text="Add Product", command=self.add_products)
+        self.button_products_add.pack(side=TOP, padx=5, pady=5)
         
         self.display_products()
         
         
     def display_products(self):
-        pass 
+        columns = ('SKU', 'Name', "Price/SQM", "Description")
+        self.tree_products_list = ttk.Treeview(self.content_frame, columns=columns, show="headings")
         
+        
+        self.tree_products_list.heading("SKU", text="SKU", anchor="center")
+        self.tree_products_list.heading("Name", text="Name", anchor="center")
+        self.tree_products_list.heading("Price/SQM", text="Price/SQM", anchor="center")
+        self.tree_products_list.heading("Description", text="Description", anchor="center")
+        
+        self.tree_products_list.column("SKU", width="100", anchor="center", stretch=False)
+        self.tree_products_list.column("Name", width=150, anchor="center", stretch=False)
+        self.tree_products_list.column("Price/SQM", width=100, anchor="center", stretch=False)
+        self.tree_products_list.column("Description", width=250, anchor="center", stretch=False)
+        
+        scrollbar = ttk.Scrollbar(self.content_frame, orient="vertical", command=self.tree_products_list)
+        self.tree_products_list.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        
+        self.tree_products_list.pack(expand=True, padx=10, pady=10)
+
+        try: 
+            cursor = self.conn.cursor()
+            displayer = """SELECT SKU, name, price_per_sqm, description FROM Products"""
+
+            cursor.execute(displayer)
+            products=cursor.fetchall()
+            cursor.close()
+
+            for product in products: 
+                self.tree_products_list.insert('', 'end', value=product)
+
+        except Exception as error: 
+            messagebox.showerror("Error", f"Encountered this: {error}")
+
+    def add_products(self): 
+        
+        for widget in self.content_frame.winfo_children(): 
+            widget.destroy()
+
+        self.title("Add Products")
+
+        frame = self.content_frame
+
+        self.label_productadd_sku = ttk.Label(frame, text="SKU")
+        self.label_productadd_sku.grid(row=0, column=0, padx=5, pady=10)
+
+        self.entry_productadd_sku = ttk.Entry(frame)
+        self.entry_productadd_sku.grid(row=0, column=1, padx=5, pady=10)
+
+        self.label_productadd_name = ttk.Label(frame, text="Name")
+        self.label_productadd_name.grid(row=1, column=0, padx=5, pady=10)
+
+        self.entry_productadd_name = ttk.Entry(frame)
+        self.entry_productadd_name.grid(row=1, column=1, padx=5, pady=10)
+
+        self.label_productadd_price = ttk.Label(frame, text="Price Per SQM")
+        self.label_productadd_price.grid(row=2, column=0, padx=5, pady=10)
+
+        self.entry_productadd_price = ttk.Entry(frame)
+        self.entry_productadd_price.grid(row=2, column=1, padx=5, pady=10)
+
+        self.label_productadd_description = ttk.Label(frame, text="Description")
+        self.label_productadd_description.grid(row=3, column=0, padx=5, pady=10)
+
+        self.entry_productadd_description = ttk.Entry(frame)
+        self.entry_productadd_description.grid(row=3, column=1, padx=5, pady=10)
+
+        self.button_productadd_save = ttk.Button(frame, text="Save", command=self.save_product, bootstyle=SUCCESS)
+        self.button_productadd_save.grid(row=4, column=0, columnspan=2)
+
+
+    def save_product(self): 
+
+        sku = self.entry_productadd_sku.get().strip()
+        name = self.entry_productadd_name.get().strip()
+        price_per_sqm = self.entry_productadd_price.get().strip()
+        description = self.entry_productadd_description.get().strip()
+
+        if not sku or not name or not price_per_sqm: 
+            messagebox.showerror("ERROR", "All Fields Are Required")
+
+        try: 
+            cursor = self.conn.cursor()
+
+            save_product = sql.SQL("""
+                                   INSERT INTO Products(SKU, name, price_per_sqm, description) VALUES (%s, %s, %s, %s)
+                                   """)
+
+            cursor.execute(save_product, (sku,  name, price_per_sqm, description))
+            self.conn.commit()
+            cursor.close()
+            messagebox.showinfo("SUCCESS", "Added new product to product list")
+            self.show_products()
+        except psycopg2.errors.UniqueViolation: 
+            self.conn.rollback()
+            messagebox.showerror("ERROR", "Product with this SKU already exists")
+            
+        except Exception as error: 
+            messagebox.showerror("ERROR", f"Encountered this error: {error}")
+
 if __name__ == "__main__":
     NEA_tables.create_tables()
      
     app = Application()
     app.mainloop()
-    
-    
-    
-        
-        
-        
-          
