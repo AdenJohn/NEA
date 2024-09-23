@@ -248,6 +248,10 @@ class Application(ttk.Window):
         self.button_products_add = ttk.Button(self.content_frame, text="Add Product", command=self.add_products)
         self.button_products_add.pack(side=TOP, padx=5, pady=5)
         
+        #put edit product button here
+        self.button_edit_product = ttk.Button(self.content_frame, text="Edit Product", command=self.edit_product)
+        self.button_edit_product.pack(side=TOP, padx=5, pady=5)
+        
         self.display_products()
         
         
@@ -266,7 +270,7 @@ class Application(ttk.Window):
         self.tree_products_list.column("Price/SQM", width=100, anchor="center", stretch=False)
         self.tree_products_list.column("Description", width=250, anchor="center", stretch=False)
         
-        scrollbar = ttk.Scrollbar(self.content_frame, orient="vertical", command=self.tree_products_list)
+        scrollbar = ttk.Scrollbar(self.content_frame, orient="vertical", command=self.tree_products_list.yview)
         self.tree_products_list.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
         
@@ -351,6 +355,106 @@ class Application(ttk.Window):
             
         except Exception as error: 
             messagebox.showerror("ERROR", f"Encountered this error: {error}")
+            
+    def edit_product(self): 
+        #maybe make it so that you can see the old name as well as the new name when you type it in
+        
+        selected_product = self.tree_products_list.selection()
+        if not selected_product: 
+            messagebox.showerror("Error", "Please select an item")
+            return
+        
+        product_values = self.tree_products_list.item(selected_product)['values']
+        
+        if not product_values: 
+            messagebox.showerror("Error", "Selecte product has no data")
+            return
+        
+        for widget in self.content_frame.winfo_children(): 
+            widget.destroy()
+            
+        editing_window = ttk.Toplevel(self)
+        editing_window.title("Edit Product")
+        editing_window.geometry("400x350")
+        editing_window.resizable(False, False)
+        
+        frame = ttk.Frame(editing_window)
+        frame.pack(pady=10, fill='x', expand=True)
+        
+        for row in range(6): 
+            frame.rowconfigure(row, weight=1)
+            
+        for column in range(5): 
+            frame.columnconfigure(column, weight=1)
+    
+        self.label_edit_sku = ttk.Label(frame, text="New SKU")
+        self.label_edit_sku.grid(row=0, column=1, padx=5, pady=5)
+        
+        self.entry_edit_sku = ttk.Entry(frame)
+        self.entry_edit_sku.grid(row=0, column=2, sticky="w")
+        self.entry_edit_sku.insert(0, product_values[0])
+        
+        self.label_edit_name = ttk.Label(frame, text="New name")
+        self.label_edit_name.grid(row=1, column=1)
+        
+        self.entry_edit_name = ttk.Entry(frame)
+        self.entry_edit_name.grid(row=1, column=2, sticky="w")
+        self.entry_edit_name.insert(0, product_values[1])
+        
+        self.label_edit_price = ttk.Label(frame, text="New price per SQM")
+        self.label_edit_price.grid(row=2, column=1)
+        
+        self.entry_edit_price = ttk.Entry(frame)
+        self.entry_edit_price.grid(row=2, column=2, sticky="w")
+        self.entry_edit_price.insert(0, product_values[2])
+        
+        self.label_edit_description = ttk.Label(frame, text="New description")
+        self.label_edit_description.grid(row=3, column=1)
+        
+        self.entry_edit_description = ttk.Entry(frame)
+        self.entry_edit_description.grid(row=3, column=2, sticky="w")
+        self.entry_edit_description.insert(0, product_values[3])
+        
+        self.button_edit_save = ttk.Button(frame, text="Save Changes", bootstyle=SUCCESS, command=lambda: self.save_edit_changes(self.entry_edit_sku.get().strip(), self.entry_edit_name.get().strip(), self.entry_edit_price.get().strip(), self.entry_edit_description.get().strip(), editing_window))
+        self.button_edit_save.grid(row=4, column=1, columnspan=2)
+        
+    def save_edit_changes(self, sku, name, price_per_sqm, description, frame): 
+        
+        if not sku or not name or not price_per_sqm or not description:
+            messagebox.showerror("Error", "All fields are required")
+            return
+        
+        try: 
+            price_per_sqm = float(price_per_sqm)
+        except ValueError: 
+            messagebox.showerror("Error", "Price must be an integer or decimal number")
+            return
+
+        try: 
+            with self.conn.cursor() as cursor:
+                
+                selected_item = self.tree_products_list.selection()
+                original_sku = self.tree_products_list.item(selected_item)['values'][0]
+                
+            if sku != original_sku: 
+                cursor.execute("SELECT SKU FROM Products WHERE SKU = %s", (sku,))
+                if cursor.fetchone(): 
+                    messagebox.showerror("Error", "Another product with this SKU already exists")
+                    return
+        
+            updating_products = sql.SQL("""UPDATE Products SET SKU = %s, name = %s, price_per_sqm = %s, description = %s WHERE SKU = %s""")
+            cursor.execute(updating_products, (sku, name, price_per_sqm, description, original_sku))
+            self.conn.commit()
+            messagebox.showinfo("Success", "Product has been updated")
+            self.display_products()
+            frame.destroy()
+        
+        except psycopg2.errors.UniqueViolation: 
+            self.conn.rollback()
+            messagebox.showerror("Error", "Product with this SKU already exists")
+        except Exception as error: 
+            self.conn.rollback()
+            messagebox.showerror("Error", f"Encountered this error: {error}")
 
 if __name__ == "__main__":
     NEA_tables.create_tables()
