@@ -15,6 +15,7 @@ def database_connection():
             port = "5432",
         )
         return conn
+        
     except psycopg2.Error as error: 
         print(f"Found this error while trying to connect: {error}")
         return None
@@ -219,10 +220,7 @@ class Application(ttk.Window):
         self.label_main_welcome = ttk.Label(self.content_frame, text=f"Welcome {self.user[2]} {self.user[3]}")
         self.label_main_welcome.pack(pady=10)
         
-        self.button_main_products = ttk.Button(self.navigation_frame, text="Products", command=self.show_products)
-        self.button_main_products.pack(side=LEFT, padx= 5, pady=5)
-        
-        self.button_main_inventory = ttk.Button(self.navigation_frame, text="Inventory", command=None)
+        self.button_main_inventory = ttk.Button(self.navigation_frame, text="Products", command=self.display_products)
         self.button_main_inventory.pack(side=LEFT, padx= 5, pady=5)
         
         self.show_home()
@@ -237,36 +235,38 @@ class Application(ttk.Window):
         self.label_home_welcome = ttk.Label(self.content_frame, text=f"Welcome {self.user[2]} {self.user[3]}")
         self.label_home_welcome.pack(pady=10)
         
-    def show_products(self): #shows all products and has a thing at the 
+    #def show_products(self): #shows all products and has a thing at the 
+
         
+    def display_products(self):
+
         for widget in self.content_frame.winfo_children(): 
             widget.destroy()
-            
-            
+
         self.title("Products")
-        
+
         self.button_products_add = ttk.Button(self.content_frame, text="Add Product", command=self.add_products)
         self.button_products_add.pack(side=TOP, padx=5, pady=5)
         
-        self.display_products()
-        
-        
-    def display_products(self):
-        columns = ('SKU', 'Name', "Price/SQM", "Description")
+        #put edit product button here
+        self.button_edit_product = ttk.Button(self.content_frame, text="Edit Product", command=self.edit_product)
+        self.button_edit_product.pack(side=TOP, padx=5, pady=5)
+
+        columns = ('SKU', 'Name', "Price/SQM", "Quantity")
         self.tree_products_list = ttk.Treeview(self.content_frame, columns=columns, show="headings")
         
         
         self.tree_products_list.heading("SKU", text="SKU", anchor="center")
         self.tree_products_list.heading("Name", text="Name", anchor="center")
         self.tree_products_list.heading("Price/SQM", text="Price/SQM", anchor="center")
-        self.tree_products_list.heading("Description", text="Description", anchor="center")
+        self.tree_products_list.heading("Quantity", text="Quantity", anchor="center")
         
         self.tree_products_list.column("SKU", width="100", anchor="center", stretch=False)
         self.tree_products_list.column("Name", width=150, anchor="center", stretch=False)
         self.tree_products_list.column("Price/SQM", width=100, anchor="center", stretch=False)
-        self.tree_products_list.column("Description", width=250, anchor="center", stretch=False)
+        self.tree_products_list.column("Quantity", width=250, anchor="center", stretch=False)
         
-        scrollbar = ttk.Scrollbar(self.content_frame, orient="vertical", command=self.tree_products_list)
+        scrollbar = ttk.Scrollbar(self.content_frame, orient="vertical", command=self.tree_products_list.yview)
         self.tree_products_list.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
         
@@ -274,7 +274,7 @@ class Application(ttk.Window):
 
         try: 
             cursor = self.conn.cursor()
-            displayer = """SELECT SKU, name, price_per_sqm, description FROM Products"""
+            displayer = """SELECT SKU, name, price_per_sqm, quantity FROM Products"""
 
             cursor.execute(displayer)
             products=cursor.fetchall()
@@ -313,11 +313,11 @@ class Application(ttk.Window):
         self.entry_productadd_price = ttk.Entry(frame)
         self.entry_productadd_price.grid(row=2, column=1, padx=5, pady=10)
 
-        self.label_productadd_description = ttk.Label(frame, text="Description")
-        self.label_productadd_description.grid(row=3, column=0, padx=5, pady=10)
+        self.label_productadd_quantity = ttk.Label(frame, text="Quantity")
+        self.label_productadd_quantity.grid(row=3, column=0, padx=5, pady=10)
 
-        self.entry_productadd_description = ttk.Entry(frame)
-        self.entry_productadd_description.grid(row=3, column=1, padx=5, pady=10)
+        self.entry_productadd_quantity = ttk.Entry(frame)
+        self.entry_productadd_quantity.grid(row=3, column=1, padx=5, pady=10)
 
         self.button_productadd_save = ttk.Button(frame, text="Save", command=self.save_product, bootstyle=SUCCESS)
         self.button_productadd_save.grid(row=4, column=0, columnspan=2)
@@ -328,7 +328,7 @@ class Application(ttk.Window):
         sku = self.entry_productadd_sku.get().strip()
         name = self.entry_productadd_name.get().strip()
         price_per_sqm = self.entry_productadd_price.get().strip()
-        description = self.entry_productadd_description.get().strip()
+        quantity = self.entry_productadd_quantity.get().strip()
 
         if not sku or not name or not price_per_sqm: 
             messagebox.showerror("ERROR", "All Fields Are Required")
@@ -337,10 +337,10 @@ class Application(ttk.Window):
             cursor = self.conn.cursor()
 
             save_product = sql.SQL("""
-                                   INSERT INTO Products(SKU, name, price_per_sqm, description) VALUES (%s, %s, %s, %s)
+                                   INSERT INTO Products(SKU, name, price_per_sqm, quantity) VALUES (%s, %s, %s, %s)
                                    """)
 
-            cursor.execute(save_product, (sku,  name, price_per_sqm, description))
+            cursor.execute(save_product, (str(sku),  name, price_per_sqm, quantity))
             self.conn.commit()
             cursor.close()
             messagebox.showinfo("SUCCESS", "Added new product to product list")
@@ -351,9 +351,109 @@ class Application(ttk.Window):
             
         except Exception as error: 
             messagebox.showerror("ERROR", f"Encountered this error: {error}")
+            
+    def edit_product(self): 
+        #maybe make it so that you can see the old name as well as the new name when you type it in
+        
+        selected_product = self.tree_products_list.selection()
+        if not selected_product: 
+            messagebox.showerror("Error", "Please select an item")
+            return
+        
+        product_values = self.tree_products_list.item(selected_product)['values']
+        
+        if not product_values: 
+            messagebox.showerror("Error", "Selecte product has no data")
+            return
+
+        editing_window = ttk.Toplevel(self)
+        editing_window.title("Edit Product")
+        editing_window.geometry("500x500")
+        editing_window.resizable(False, False)
+        
+        frame = ttk.Frame(editing_window)
+        frame.pack(pady=10, fill='x', expand=True)
+        
+        for row in range(6): 
+            frame.rowconfigure(row, weight=1)
+            
+        for column in range(5): 
+            frame.columnconfigure(column, weight=1)
+    
+        self.label_edit_sku = ttk.Label(frame, text="New SKU")
+        self.label_edit_sku.grid(row=0, column=1, padx=10, pady=10)
+        
+        self.entry_edit_sku = ttk.Entry(frame)
+        self.entry_edit_sku.grid(row=0, column=2, sticky="w", pady=10)
+        self.entry_edit_sku.insert(0, product_values[0])
+        
+        self.label_edit_name = ttk.Label(frame, text="New name")
+        self.label_edit_name.grid(row=1, column=1, padx=10, pady=10)
+        
+        self.entry_edit_name = ttk.Entry(frame)
+        self.entry_edit_name.grid(row=1, column=2, sticky="w", pady=10)
+        self.entry_edit_name.insert(0, product_values[1])
+        
+        self.label_edit_price = ttk.Label(frame, text="New price per SQM")
+        self.label_edit_price.grid(row=2, column=1, padx=10, pady=10)
+        
+        self.entry_edit_price = ttk.Entry(frame)
+        self.entry_edit_price.grid(row=2, column=2, sticky="w", pady=10)
+        self.entry_edit_price.insert(0, product_values[2])
+        
+        self.label_edit_quantity = ttk.Label(frame, text="New Quantity")
+        self.label_edit_quantity.grid(row=3, column=1, padx=10, pady=10)
+        
+        self.entry_edit_quantity = ttk.Entry(frame)
+        self.entry_edit_quantity.grid(row=3, column=2, sticky="w", pady=10)
+        self.entry_edit_quantity.insert(0, product_values[3])
+        
+        self.button_edit_save = ttk.Button(frame, text="Save Changes", bootstyle=SUCCESS, command=lambda: self.save_edit_changes(self.entry_edit_sku.get().strip(), self.entry_edit_name.get().strip(), self.entry_edit_price.get().strip(), self.entry_edit_quantity.get().strip(), editing_window))
+        self.button_edit_save.grid(row=4, column=1, columnspan=2, pady=10)
+        
+    def save_edit_changes(self, sku, name, price_per_sqm, quantity, frame): 
+
+        if not sku or not name or not price_per_sqm or not quantity:
+            messagebox.showerror("Error", "All fields are required")
+            return
+        
+        try: 
+            price_per_sqm = float(price_per_sqm)
+        except ValueError: 
+            messagebox.showerror("Error", "Price must be an integer or decimal number")
+            return
+
+        try: 
+            cursor = self.conn.cursor()
+                
+            selected_item = self.tree_products_list.selection()
+            original_sku = self.tree_products_list.item(selected_item)['values'][0]
+                
+            if sku != original_sku: 
+                cursor.execute("SELECT SKU FROM Inventory WHERE SKU = %s", (str(sku),))
+                if cursor.fetchone(): 
+                    messagebox.showerror("Error", "Another product with this SKU already exists")
+                    return
+        
+            updating_products = sql.SQL("""UPDATE Inventory SET SKU = %s, name = %s, price_per_sqm = %s, quantity = %s WHERE SKU = %s""")
+            cursor.execute(updating_products, (str(sku), name, price_per_sqm, quantity, str(original_sku)))
+            self.conn.commit()
+            messagebox.showinfo("Success", "Product has been updated")
+            self.display_products()
+            frame.destroy()
+        
+        except psycopg2.errors.UniqueViolation: 
+            self.conn.rollback()
+            messagebox.showerror("Error", "Product with this SKU already exists")
+        except Exception as error: 
+            self.conn.rollback()
+            messagebox.showerror("Error", f"Encountered this error: {error}")
+            print(f"Encountered this error: {error}")
+    
+
+
 
 if __name__ == "__main__":
     NEA_tables.create_tables()
-     
     app = Application()
     app.mainloop()
