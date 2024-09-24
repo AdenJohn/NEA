@@ -220,7 +220,7 @@ class Application(ttk.Window):
         self.label_main_welcome = ttk.Label(self.content_frame, text=f"Welcome {self.user[2]} {self.user[3]}")
         self.label_main_welcome.pack(pady=10)
         
-        self.button_main_inventory = ttk.Button(self.navigation_frame, text="Products", command=self.display_products)
+        self.button_main_inventory = ttk.Button(self.navigation_frame, text="Inventory", command=self.display_inventory)
         self.button_main_inventory.pack(side=LEFT, padx= 5, pady=5)
         
         self.show_home()
@@ -234,54 +234,52 @@ class Application(ttk.Window):
         
         self.label_home_welcome = ttk.Label(self.content_frame, text=f"Welcome {self.user[2]} {self.user[3]}")
         self.label_home_welcome.pack(pady=10)
-        
-    #def show_products(self): #shows all products and has a thing at the 
 
         
-    def display_products(self):
+    def display_inventory(self):
 
         for widget in self.content_frame.winfo_children(): 
             widget.destroy()
 
-        self.title("Products")
+        self.title("Inventory")
 
-        self.button_products_add = ttk.Button(self.content_frame, text="Add Product", command=self.add_products)
-        self.button_products_add.pack(side=TOP, padx=5, pady=5)
+        self.button_inventory_add = ttk.Button(self.content_frame, text="Add Product", command=self.add_products)
+        self.button_inventory_add.pack(side=TOP, padx=5, pady=5)
         
         #put edit product button here
         self.button_edit_product = ttk.Button(self.content_frame, text="Edit Product", command=self.edit_product)
         self.button_edit_product.pack(side=TOP, padx=5, pady=5)
 
         columns = ('SKU', 'Name', "Price/SQM", "Quantity")
-        self.tree_products_list = ttk.Treeview(self.content_frame, columns=columns, show="headings")
+        self.tree_inventory_list = ttk.Treeview(self.content_frame, columns=columns, show="headings")
         
         
-        self.tree_products_list.heading("SKU", text="SKU", anchor="center")
-        self.tree_products_list.heading("Name", text="Name", anchor="center")
-        self.tree_products_list.heading("Price/SQM", text="Price/SQM", anchor="center")
-        self.tree_products_list.heading("Quantity", text="Quantity", anchor="center")
+        self.tree_inventory_list.heading("SKU", text="SKU", anchor="center")
+        self.tree_inventory_list.heading("Name", text="Name", anchor="center")
+        self.tree_inventory_list.heading("Price/SQM", text="Price/SQM", anchor="center")
+        self.tree_inventory_list.heading("Quantity", text="Quantity", anchor="center")
         
-        self.tree_products_list.column("SKU", width="100", anchor="center", stretch=False)
-        self.tree_products_list.column("Name", width=150, anchor="center", stretch=False)
-        self.tree_products_list.column("Price/SQM", width=100, anchor="center", stretch=False)
-        self.tree_products_list.column("Quantity", width=250, anchor="center", stretch=False)
+        self.tree_inventory_list.column("SKU", width="100", anchor="center", stretch=False)
+        self.tree_inventory_list.column("Name", width=150, anchor="center", stretch=False)
+        self.tree_inventory_list.column("Price/SQM", width=100, anchor="center", stretch=False)
+        self.tree_inventory_list.column("Quantity", width=250, anchor="center", stretch=False)
         
-        scrollbar = ttk.Scrollbar(self.content_frame, orient="vertical", command=self.tree_products_list.yview)
-        self.tree_products_list.configure(yscrollcommand=scrollbar.set)
+        scrollbar = ttk.Scrollbar(self.content_frame, orient="vertical", command=self.tree_inventory_list.yview)
+        self.tree_inventory_list.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
         
-        self.tree_products_list.pack(expand=True, padx=10, pady=10)
+        self.tree_inventory_list.pack(expand=True, padx=10, pady=10)
 
         try: 
             cursor = self.conn.cursor()
-            displayer = """SELECT SKU, name, price_per_sqm, quantity FROM Products"""
+            displayer = """SELECT SKU, name, price_per_sqm, quantity FROM Inventory"""
 
             cursor.execute(displayer)
-            products=cursor.fetchall()
+            inventory=cursor.fetchall()
             cursor.close()
 
-            for product in products: 
-                self.tree_products_list.insert('', 'end', value=product)
+            for product in inventory: 
+                self.tree_inventory_list.insert('', 'end', value=product)
 
         except Exception as error: 
             messagebox.showerror("Error", f"Encountered this: {error}")
@@ -291,7 +289,7 @@ class Application(ttk.Window):
         for widget in self.content_frame.winfo_children(): 
             widget.destroy()
 
-        self.title("Add Products")
+        self.title("Add Product to Inventory")
 
         frame = self.content_frame
 
@@ -337,14 +335,14 @@ class Application(ttk.Window):
             cursor = self.conn.cursor()
 
             save_product = sql.SQL("""
-                                   INSERT INTO Products(SKU, name, price_per_sqm, quantity) VALUES (%s, %s, %s, %s)
+                                   INSERT INTO Inventory(SKU, name, price_per_sqm, quantity) VALUES (%s, %s, %s, %s)
                                    """)
 
             cursor.execute(save_product, (str(sku),  name, price_per_sqm, quantity))
             self.conn.commit()
             cursor.close()
             messagebox.showinfo("SUCCESS", "Added new product to product list")
-            self.show_products()
+            self.display_inventory()
         except psycopg2.errors.UniqueViolation: 
             self.conn.rollback()
             messagebox.showerror("ERROR", "Product with this SKU already exists")
@@ -355,12 +353,12 @@ class Application(ttk.Window):
     def edit_product(self): 
         #maybe make it so that you can see the old name as well as the new name when you type it in
         
-        selected_product = self.tree_products_list.selection()
+        selected_product = self.tree_inventory_list.selection()
         if not selected_product: 
             messagebox.showerror("Error", "Please select an item")
             return
         
-        product_values = self.tree_products_list.item(selected_product)['values']
+        product_values = self.tree_inventory_list.item(selected_product)['values']
         
         if not product_values: 
             messagebox.showerror("Error", "Selecte product has no data")
@@ -426,8 +424,8 @@ class Application(ttk.Window):
         try: 
             cursor = self.conn.cursor()
                 
-            selected_item = self.tree_products_list.selection()
-            original_sku = self.tree_products_list.item(selected_item)['values'][0]
+            selected_item = self.tree_inventory_list.selection()
+            original_sku = self.tree_inventory_list.item(selected_item)['values'][0]
                 
             if sku != original_sku: 
                 cursor.execute("SELECT SKU FROM Inventory WHERE SKU = %s", (str(sku),))
@@ -435,11 +433,11 @@ class Application(ttk.Window):
                     messagebox.showerror("Error", "Another product with this SKU already exists")
                     return
         
-            updating_products = sql.SQL("""UPDATE Inventory SET SKU = %s, name = %s, price_per_sqm = %s, quantity = %s WHERE SKU = %s""")
-            cursor.execute(updating_products, (str(sku), name, price_per_sqm, quantity, str(original_sku)))
+            updating_inventory = sql.SQL("""UPDATE Inventory SET SKU = %s, name = %s, price_per_sqm = %s, quantity = %s WHERE SKU = %s""")
+            cursor.execute(updating_inventory, (str(sku), name, price_per_sqm, quantity, str(original_sku)))
             self.conn.commit()
             messagebox.showinfo("Success", "Product has been updated")
-            self.display_products()
+            self.display_inventory()
             frame.destroy()
         
         except psycopg2.errors.UniqueViolation: 
@@ -449,11 +447,17 @@ class Application(ttk.Window):
             self.conn.rollback()
             messagebox.showerror("Error", f"Encountered this error: {error}")
             print(f"Encountered this error: {error}")
-    
-
-
 
 if __name__ == "__main__":
     NEA_tables.create_tables()
     app = Application()
     app.mainloop()
+    
+    
+    #things that are next in line
+        #hashing
+        #search bar for inventory
+        #clients
+        #orders
+        #deliveries
+        #reports
