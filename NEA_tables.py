@@ -9,8 +9,8 @@ def create_tables():
             database = "NEA", 
             user = "postgres", 
             password="1510",
-            port = "5432",
-        )
+            port = "5432",)
+
         cursor = conn.cursor()
 
         #creating the users table
@@ -26,17 +26,15 @@ def create_tables():
         cursor.execute(create_user_table)
         
         #creating the products table
-        create_products_table = """CREATE TABLE IF NOT EXISTS Products(
+        create_inventory_table = """CREATE TABLE IF NOT EXISTS Inventory(
             product_id SERIAL PRIMARY KEY, 
             SKU VARCHAR(50) UNIQUE NOT NULL, 
             name VARCHAR(255) NOT NULL, 
-            description TEXT, 
-            price_per_sqm DECIMAL(10, 2) NOT NULL,
+            price_per_sqm DECIMAL(10, 2) NOT NULL, 
+            quantity INTEGER NOT NULL 
         );"""
 
-        cursor.execute(create_products_table)
-
-        #creating client tables
+        cursor.execute(create_inventory_table)
 
         conn.commit()
         cursor.close()
@@ -49,3 +47,5 @@ def create_tables():
 if __name__ == "__main__": 
     create_tables()
         
+
+
