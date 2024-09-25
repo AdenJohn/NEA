@@ -4,6 +4,7 @@ import psycopg2
 from psycopg2 import sql
 from tkinter import messagebox
 import NEA_tables
+import os
 
 def database_connection(): 
     try: 
@@ -19,13 +20,37 @@ def database_connection():
     except psycopg2.Error as error: 
         print(f"Found this error while trying to connect: {error}")
         return None
+
+
+
+class PasswordHasher: 
+    def __init__(self, salt_length=16): 
+        self.salt_length = salt_length
+
+    def generating_salt(self): 
+        return os.urandom(self.salt_length)
+    
+    def hash(self, password, salt): 
         
+        password_bytes = password.encode('utf-8')
+        hashed_bytes = bytearray()
+
+        for i in range(len(password_bytes)): 
+            hashed_bytes.append(password_bytes[i] ^ salt[i % len(salt)])
+        
+        return ''.join(format(byte, '02x') for byte in hashed_bytes)
+
+    def verify_password(self, login_password, stored_salt, registered_password): 
+        new_hash = self.hash(login_password, stored_salt)
+        return new_hash == registered_password
+
 class Application(ttk.Window):
     def __init__(self): 
         super().__init__(title = "Sales Order Processing System")
         self.geometry("900x400")
         
         self.conn = database_connection()
+        self.password_hashed = PasswordHasher()
         
         if not self.conn: 
             messagebox.showerror("Error", "Connection Unsuccessful")
@@ -59,7 +84,7 @@ class Application(ttk.Window):
         frame = ttk.Frame(self)
         frame.pack(pady=10)
         
-        self.label_register_empcode = ttk.Label(frame, text="Employee Code", width=15)
+        self.label_register_empcode = ttk.Label(frame, text="Employee Code")
         self.label_register_empcode.grid(row=0, column=0, padx=10, pady=10, sticky="E")
         
         self.entry_register_empcode = ttk.Entry(frame)
@@ -102,18 +127,21 @@ class Application(ttk.Window):
         last_name = self.entry_register_lastname.get().strip()
         email = self.entry_register_email.get().strip()
         password = self.entry_register_password.get().strip()
-        
+
         if not employee_code or not first_name or not last_name or not email: 
             messagebox.showerror("Error", "You must fill all boxes!")
             return
-            
-        self.insert_user(employee_code, first_name, last_name, email, password)
+
+        salt = self.password_hashed.generating_salt()
+        hashed_password = self.password_hashed.hash(password, salt)
+
+        self.insert_user(employee_code, first_name, last_name, email, hashed_password, salt)
     
-    def insert_user(self, employee_code, first_name, last_name, email, password):
+    def insert_user(self, employee_code, first_name, last_name, email, hashed_password, salt):
         try: 
             cursor = self.conn.cursor()
-            inserter = sql.SQL("""INSERT INTO Users(employee_code, first_name, last_name, email, password) VALUES (%s, %s, %s, %s, %s)""")
-            cursor.execute(inserter, (employee_code, first_name, last_name, email, password))
+            inserter = """INSERT INTO Users(employee_code, first_name, last_name, email, password_hash, password_salt) VALUES (%s, %s, %s, %s, %s, %s)"""
+            cursor.execute(inserter, (employee_code, first_name, last_name, email, hashed_password, salt.hex()))
             self.conn.commit()
             cursor.close()
             messagebox.showinfo("Success", "You have been successfully registered!")
@@ -144,63 +172,56 @@ class Application(ttk.Window):
         
         self.entry_login_empcode = ttk.Entry(frame)
         self.entry_login_empcode.grid(row=0, column=1, pady=10)
-
-        self.label_login_email = ttk.Label(frame, text="Email")
-        self.label_login_email.grid(row=1, column=0, padx=10, pady=10, sticky="E")
-        
-        self.entry_login_email = ttk.Entry(frame)
-        self.entry_login_email.grid(row=1, column=1, pady=10)
         
         self.label_login_password = ttk.Label(frame, text="Password")
-        self.label_login_password.grid(row=2, column=0, padx=10, pady=10, sticky="E")
+        self.label_login_password.grid(row=1, column=0, padx=10, pady=10, sticky="E")
         
         self.entry_login_password = ttk.Entry(frame)
-        self.entry_login_password.grid(row=2, column=1, pady=10)
+        self.entry_login_password.grid(row=1, column=1, pady=10)
         
         self.button_login_login = ttk.Button(frame, text="Login", command=self.auth_userlogin)
-        self.button_login_login.grid(row=3, column=1, padx=10, pady=10)
+        self.button_login_login.grid(row=2, column=1, padx=10, pady=10)
         
         self.button_login_homepage = ttk.Button(frame, text="Back", command=self.widgets)
-        self.button_login_homepage.grid(row=3, column=0, sticky="E")
+        self.button_login_homepage.grid(row=2, column=0, sticky="E")
 
     def auth_userlogin(self): 
         
         employee_code = self.entry_login_empcode.get().strip()
-        email = self.entry_login_email.get().strip()
-        password = self.entry_login_password.get().strip()
+        login_password = self.entry_login_password.get().strip()
         
-        if not employee_code or not email or not password: 
+        if not employee_code or not login_password: 
             messagebox.showerror("Error", "You must fill in all boxes!")
             return
         
         try: 
             cursor = self.conn.cursor()
-            authenticator = sql.SQL("""
-                                    SELECT * FROM Users
-                                    WHERE employee_code = %s AND email = %s AND password = %s
-                                    """)
-            cursor.execute(authenticator, (employee_code, email, password))
+
+            authenticator = sql.SQL("""SELECT first_name, last_name, password_hash, password_salt FROM Users WHERE employee_code = %s""")
+            cursor.execute(authenticator, (employee_code,))
             user = cursor.fetchone()
             cursor.close()
             
             if user: 
-                messagebox.showinfo("Success", "You have successfully logged in")
-                
-                self.show_main_window(user)
-                
+                first_name, last_name, registred_password, stored_salt = user
+                stored_salt = bytes.fromhex(stored_salt)
+                if self.password_hashed.verify_password(login_password, stored_salt, registred_password):
+                    messagebox.showinfo("Success", "You have successfully logged in")
+                    self.show_main_window(first_name, last_name)
+                else: 
+                    messagebox.showerror("Invalid Credentials", "Incorrect Password")
             else: 
-                messagebox.showerror("Invalid Credentials", "Try again or Register")
+                messagebox.showerror("Invalid Credentials", "No user found with this employee code")
             
         except Exception as error: 
             messagebox.showerror("Database Error:", error)
             
             
-    def show_main_window(self, user): 
+    def show_main_window(self, first_name, last_name): 
         
         for widget in self.winfo_children(): 
             widget.destroy()
-            
-        self.user = user
+        
         
         self.geometry("900x400")
         self.title("Home Page")
@@ -214,25 +235,25 @@ class Application(ttk.Window):
         self.button_main_logout = ttk.Button(self.navigation_frame, text="Logout", command=self.widgets)
         self.button_main_logout.pack(side=LEFT, padx=5, pady=5)
         
-        self.button_main_home = ttk.Button(self.navigation_frame, text="Home", command=self.show_home)
+        self.button_main_home = ttk.Button(self.navigation_frame, text="Home", command=lambda: self.show_home(first_name, last_name))
         self.button_main_home.pack(side=LEFT, padx=5, pady=5)
         
-        self.label_main_welcome = ttk.Label(self.content_frame, text=f"Welcome {self.user[2]} {self.user[3]}")
+        self.label_main_welcome = ttk.Label(self.content_frame, text=f"Welcome {first_name} {last_name}")
         self.label_main_welcome.pack(pady=10)
         
         self.button_main_inventory = ttk.Button(self.navigation_frame, text="Inventory", command=self.display_inventory)
         self.button_main_inventory.pack(side=LEFT, padx= 5, pady=5)
         
-        self.show_home()
+        self.show_home(first_name, last_name)
         
-    def show_home(self): 
+    def show_home(self, first_name, last_name): 
         
         for widget in self.content_frame.winfo_children(): 
             widget.destroy()
             
         self.title("Home Page")
         
-        self.label_home_welcome = ttk.Label(self.content_frame, text=f"Welcome {self.user[2]} {self.user[3]}")
+        self.label_home_welcome = ttk.Label(self.content_frame, text=f"Welcome {first_name} {last_name}")
         self.label_home_welcome.pack(pady=10)
 
         
@@ -453,9 +474,7 @@ if __name__ == "__main__":
     app = Application()
     app.mainloop()
     
-    
     #things that are next in line
-        #hashing
         #search bar for inventory
         #clients
         #orders
