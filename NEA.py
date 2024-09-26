@@ -449,7 +449,7 @@ class Application(ttk.Window):
             original_sku = self.tree_inventory_list.item(selected_item)['values'][0]
                 
             if sku != original_sku: 
-                cursor.execute("SELECT SKU FROM Inventory WHERE SKU = %s", (str(sku),))
+                cursor.execute("SELECT SKU FROM Inventory WHERE SKU = %s AND SKU != %s", (str(sku), str(original_sku)))
                 if cursor.fetchone(): 
                     messagebox.showerror("Error", "Another product with this SKU already exists")
                     return
