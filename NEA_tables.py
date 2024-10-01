@@ -40,12 +40,12 @@ def create_tables():
         create_clients_table = """CREATE TABLE IF NOT EXISTS Clients(
             client_id SERIAL PRIMARY KEY, 
             client_name VARCHAR(250) NOT NULL,
-            client_phone INT UNIQUE NOT NULL,
             client_email VARCHAR(150) UNIQUE NOT NULL,
-            street_address VARCHAR(100) NOT NULL, 
+            client_phone INT UNIQUE NOT NULL,
+            street_address VARCHAR(100), 
             city VARCHAR(100) NOT NULL,
-            region VARCHAR(100) NOT NULL, 
-            postal_code VARCHAR(100) NOT NULL, 
+            region VARCHAR(100), 
+            postal_code VARCHAR(100), 
             country VARCHAR(100) NOT NULL, 
             full_address TEXT
         );"""
