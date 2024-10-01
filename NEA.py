@@ -155,7 +155,7 @@ class ClientManager:
             messagebox.showerror("Error", f"Encountered this error {error}")
 
     def get_clients(self): 
-        get_client_query = """SELECT client_id, client_name, client_email, client_phone, full_address FROM Clients"""
+        get_client_query = """SELECT client_id, client_name, client_email, client_phone, street_address, city, region, postal_code, country, full_address FROM Clients"""
 
         try: 
             cursor = self.database_manager.execute_command(get_client_query)
@@ -164,10 +164,10 @@ class ClientManager:
             messagebox.showerror("Error", f"Error retrieving inventory: {error}")
             return []
 
-    def update_clients(self, name, email, phone, street, city, region, postcode, country, original_email): 
-        update_client_query = """UPDATE Clients SET client_name = %s, client_email = %s, client_phone = %s, street_address = %s, city = %s, region =%s, postal_code=%s, country=%s WHERE client_email = %s"""
+    def update_clients(self, name, email, phone, street, city, region, postcode, country, full_address, original_email): 
+        update_client_query = """UPDATE Clients SET client_name = %s, client_email = %s, client_phone = %s, street_address = %s, city = %s, region =%s, postal_code=%s, country=%s, full_address = %s WHERE client_email = %s"""
 
-        paramaters = (name, email, phone, street, city, region, postcode, country, original_email)
+        paramaters = (name, email, phone, street, city, region, postcode, country, full_address, original_email)
 
         try: 
             self.database_manager.execute_command(update_client_query, paramaters)
@@ -573,7 +573,7 @@ class Application(ttk.Window):
             widget.destroy()
 
         self.title("Inventory")
-        self.geometry("900x600")
+        self.geometry("1200x600")
 
         self.client_search_var = ttk.StringVar()
         clients_search_frame = ttk.Frame(self.content_page)
@@ -591,20 +591,20 @@ class Application(ttk.Window):
         self.button_clients_clear = ttk.Button(clients_search_frame, text="Clear", bootstyle="DANGER", command=self.clear_client_search)
         self.button_clients_clear.pack(side=LEFT, padx=5, pady=(80,0))
 
-        columns = ("Client ID", "Client Name", "Email", "Phone", "Address")
+        columns = ("Client ID", "Client Name", "Email", "Phone", "Full Address")
         self.tree_clients_list = ttk.Treeview(self.content_page, columns=columns, show="headings")
 
         self.tree_clients_list.heading("Client ID", text="Client ID", anchor="center")
         self.tree_clients_list.heading("Client Name", text="Client Name", anchor="center")
         self.tree_clients_list.heading("Email", text="Email", anchor="center")
         self.tree_clients_list.heading("Phone", text="Phone", anchor="center")
-        self.tree_clients_list.heading("Address", text="Address", anchor="center")
+        self.tree_clients_list.heading("Full Address", text="Full Address", anchor="center")
 
-        self.tree_clients_list.column("Client ID", width=100, anchor="center", stretch=False)
-        self.tree_clients_list.column("Client Name", width=100, anchor="center", stretch=False)
-        self.tree_clients_list.column("Email", width=150, anchor="center", stretch=False)
-        self.tree_clients_list.column("Phone", width=150, anchor="center", stretch=False)
-        self.tree_clients_list.column("Address", width=250, anchor="center", stretch=False)
+        self.tree_clients_list.column("Client ID", width=75, anchor="center", stretch=False)
+        self.tree_clients_list.column("Client Name", width=125, anchor="center", stretch=False)
+        self.tree_clients_list.column("Email", width=200, anchor="center", stretch=False)
+        self.tree_clients_list.column("Phone", width=120, anchor="center", stretch=False)
+        self.tree_clients_list.column("Full Address", width=500, anchor="center", stretch=False)
 
         client_scrollbar = ttk.Scrollbar(self.content_page, orient="vertical", command=self.tree_clients_list.yview)
         self.tree_clients_list.configure(yscrollcommand=client_scrollbar.set)
@@ -612,8 +612,9 @@ class Application(ttk.Window):
         self.tree_clients_list.pack(expand=True, padx=10, pady=(10,0))
 
         client_data = self.client_manager.get_clients()
+        filtered_data = self.filter_client_data(client_data)
 
-        for client in client_data: 
+        for client in filtered_data:
             self.tree_clients_list.insert('', 'end', values=client)
 
         self.load_client_data()
@@ -621,7 +622,7 @@ class Application(ttk.Window):
         self.button_clients_add = ttk.Button(self.content_page, text="Add Client", bootstyle="SUCCESS", command=self.show_clientadd)
         self.button_clients_add.pack(pady=(10,5))
 
-        self.button_clients_edit = ttk.Button(self.content_page, text="Edit Client", bootstyle="WARNING", command=None)
+        self.button_clients_edit = ttk.Button(self.content_page, text="Edit Client", bootstyle="WARNING", command=self.show_editclient_window)
         self.button_clients_edit.pack(pady=(5,50))
 
     def load_client_data(self, data=None): 
@@ -630,8 +631,23 @@ class Application(ttk.Window):
 
         client_data = data if data else self.client_manager.get_clients()
 
-        for client in client_data: 
-            self.tree_clients_list.insert('', 'end', values=client)
+        for client in client_data:
+            filtered_values = (client[0], client[1], client[2], client[3], client[9])
+            self.tree_clients_list.insert('', 'end', values=filtered_values)
+            
+    def filter_client_data(self, client_data): 
+        filtered_data = []
+        
+        for client in client_data:
+            client_id = client[0]
+            client_name = client[1]
+            email = client[2]
+            phone = client[3]
+            full_address = client[9]
+            filtered_data.append((client_id, client_name, email, phone, full_address))
+        
+        return filtered_data
+        
     
     def search_clients(self): 
         search_client = self.client_search_var.get().lower()
@@ -729,6 +745,130 @@ class Application(ttk.Window):
         
         self.client_manager.add_client(name, email, phone, street, city, region, postcode, country)
         self.show_clients()
+        
+    def show_editclient_window(self):
+        
+        selected_client = self.tree_clients_list.selection()
+        if not selected_client: 
+            messagebox.showerror("Error", "Please select a client to edit")
+            return
+        
+        original_email = self.tree_clients_list.item(selected_client)['values'][2]
+        selected_client_id = self.tree_clients_list.item(selected_client)['values'][0]
+        
+        
+        all_clients = self.client_manager.get_clients()
+        client_values = None
+        
+        for client in all_clients:
+            if client[0] == selected_client_id: 
+                client_values = client
+                break
+            
+        
+        if not client_values: 
+            messagebox.showerror("Error", "Couldn't retrieve client information")
+            return
+        
+        edit_window = ttk.Toplevel(self)
+        edit_window.title("Update Client")
+        edit_window.geometry("550x600")
+        edit_window.resizable(False, False)
+        
+        frame = ttk.Frame(edit_window)
+        frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        
+        self.label_clientedit_name = ttk.Label(frame, text="New Client Name")
+        self.label_clientedit_name.grid(row=0,column=0, padx=5, pady=(20,10), sticky="e")
+
+        self.label_clientedit_email = ttk.Label(frame, text="New Email")
+        self.label_clientedit_email.grid(row=1,column=0, padx=5, pady=10, sticky="e")
+
+        self.label_clientedit_phone = ttk.Label(frame, text="New Phone No.")
+        self.label_clientedit_phone.grid(row=2,column=0, padx=5, pady=10, sticky="e")
+
+        self.label_clientedit_street = ttk.Label(frame, text="New Street")
+        self.label_clientedit_street.grid(row=3,column=0, padx=5, pady=10, sticky="e")
+
+        self.label_clientedit_city = ttk.Label(frame, text="New City")
+        self.label_clientedit_city.grid(row=4,column=0, padx=5, pady=10, sticky="e")
+
+        self.label_clientedit_region = ttk.Label(frame, text="New Region")
+        self.label_clientedit_region.grid(row=5,column=0, padx=5, pady=10, sticky="e")
+
+        self.label_clientedit_postcode = ttk.Label(frame, text="New Postal Code")
+        self.label_clientedit_postcode.grid(row=6,column=0, padx=5, pady=10, sticky="e")
+
+        self.label_clientedit_country = ttk.Label(frame, text="New Country")
+        self.label_clientedit_country.grid(row=7,column=0, padx=5, pady=10, sticky="e")
+
+        self.entry_clientedit_name = ttk.Entry(frame)
+        self.entry_clientedit_name.grid(row=0, column=1, padx=5, pady=(20,10))
+        self.entry_clientedit_name.insert(0, client_values[1])
+
+        self.entry_clientedit_email = ttk.Entry(frame)
+        self.entry_clientedit_email.grid(row=1, column=1, padx=5, pady=10)
+        self.entry_clientedit_email.insert(0, client_values[2])
+
+        self.entry_clientedit_phone = ttk.Entry(frame)
+        self.entry_clientedit_phone.grid(row=2, column=1, padx=5, pady=10)
+        self.entry_clientedit_phone.insert(0, client_values[3])
+
+        self.entry_clientedit_street = ttk.Entry(frame)
+        self.entry_clientedit_street.grid(row=3, column=1, padx=5, pady=10)
+        self.entry_clientedit_street.insert(0, client_values[4])
+
+        self.entry_clientedit_city = ttk.Entry(frame)
+        self.entry_clientedit_city.grid(row=4, column=1, padx=5, pady=10)
+        self.entry_clientedit_city.insert(0, client_values[5])
+
+        self.entry_clientedit_region = ttk.Entry(frame)
+        self.entry_clientedit_region.grid(row=5, column=1, padx=5, pady=10)
+        self.entry_clientedit_region.insert(0, client_values[6])
+
+        self.entry_clientedit_postcode = ttk.Entry(frame)
+        self.entry_clientedit_postcode.grid(row=6, column=1, padx=5, pady=10)
+        self.entry_clientedit_postcode.insert(0, client_values[7])
+
+        self.entry_clientedit_country = ttk.Entry(frame)
+        self.entry_clientedit_country.grid(row=7, column=1, padx=5, pady=10)
+        self.entry_clientedit_country.insert(0, client_values[8])
+        
+        self.button_clientedit_back = ttk.Button(frame, text="Back", bootstyle="DANGER", command=edit_window.destroy)
+        self.button_clientedit_back.grid(row=8, column=0, padx=10, pady=10, sticky="e")
+
+        self.button_clientedit_save = ttk.Button(
+            frame,
+            text="Save Changes",
+            bootstyle="SUCCESS",
+            command=lambda: self.update_client(
+                self.entry_clientedit_name.get().strip(),
+                self.entry_clientedit_email.get().strip(),
+                self.entry_clientedit_phone.get().strip(),
+                self.entry_clientedit_street.get().strip(),
+                self.entry_clientedit_city.get().strip(),
+                self.entry_clientedit_region.get().strip(),
+                self.entry_clientedit_postcode.get().strip(),
+                self.entry_clientedit_country.get().strip(), original_email))
+        
+        self.button_clientedit_save.grid(row=8, column=1, padx=10, pady=10, sticky="w")
+        
+    def update_client(self, name, email, phone, street, city, region, postcode, country, original_email): 
+        try: 
+            full_address = f"{street}, {city}, {region}, {postcode}, {country}"
+            self.client_manager.update_clients(name, email, phone, street, city, region, postcode, country, full_address, original_email)
+            self.show_updated_clients()  
+        except Exception as error: 
+            messagebox.showerror("Error", f"Encountered this error: {error}")
+            
+    def show_updated_clients(self): 
+        for item in self.tree_clients_list.get_children(): 
+            self.tree_clients_list.delete(item)
+            
+        updated_clients = self.client_manager.get_clients()
+        
+        for client in updated_clients: 
+            self.tree_clients_list.insert('', 'end', values=client)
 
 if __name__ == "__main__":
     NEA_tables.create_tables()
@@ -736,6 +876,3 @@ if __name__ == "__main__":
     app = Application()
     app.mainloop()
         
-
-
-
