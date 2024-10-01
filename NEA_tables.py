@@ -31,11 +31,26 @@ def create_tables():
             product_id SERIAL PRIMARY KEY, 
             SKU VARCHAR(50) UNIQUE NOT NULL, 
             name VARCHAR(255) NOT NULL, 
-            price_per_sqm DECIMAL(10, 2) NOT NULL, 
+            price DECIMAL(10, 2) NOT NULL, 
             quantity INTEGER NOT NULL 
         );"""
 
         cursor.execute(create_inventory_table)
+
+        create_clients_table = """CREATE TABLE IF NOT EXISTS Clients(
+            client_id SERIAL PRIMARY KEY, 
+            client_name VARCHAR(250) NOT NULL,
+            client_phone INT UNIQUE NOT NULL,
+            client_email VARCHAR(150) UNIQUE NOT NULL,
+            street_address VARCHAR(100) NOT NULL, 
+            city VARCHAR(100) NOT NULL,
+            region VARCHAR(100) NOT NULL, 
+            postal_code VARCHAR(100) NOT NULL, 
+            country VARCHAR(100) NOT NULL, 
+            full_address TEXT
+        );"""
+
+        cursor.execute(create_clients_table)
 
         conn.commit()
         cursor.close()
@@ -48,5 +63,4 @@ def create_tables():
 if __name__ == "__main__": 
     create_tables()
         
-
 
