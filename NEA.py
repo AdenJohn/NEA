@@ -1,28 +1,80 @@
+import os
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 import psycopg2
 from psycopg2 import sql
 from tkinter import messagebox
 import NEA_tables
-import os
 
-def database_connection(): 
-    try: 
-        conn = psycopg2.connect(
-            host ="localhost",
-            database = "NEA",
-            user = "postgres",
-            password = "1510",
-            port = "5432",
-        )
-        return conn
+
+#class for database management and psycopg2/SQL related things, it has connection to the local server and execution of commands(queries)
+class DatabaseManager: 
+    def __init__(self, host="localhost", database="NEA", user="postgres", password="1510", port="5432"): 
+        self.host = host
+        self.database = database
+        self.user = user
+        self.password = password
+        self.port = port
+        self.conn = self.connect_to_database()
+
+    def connect_to_database(self): 
+        try: 
+            conn = psycopg2.connect(
+                host= self.host, 
+                database= self.database, 
+                user= self.user,
+                password= self.password,
+                port= self.port)
+            return conn
+        except psycopg2.Error as error:
+            print("Connection Error", f"Encountered: {error}")
+            return None
         
-    except psycopg2.Error as error: 
-        print(f"Found this error while trying to connect: {error}")
-        return None
+    def execute_command(self, query, paramaters=()): 
+        try: 
+            cursor = self.conn.cursor()
+            cursor.execute(query, paramaters)
+            self.conn.commit()
+            return cursor
+        except psycopg2.Error as error: 
+            self.conn.rollback()
+            print("Error", f"Query execution error: {error}")
+            raise error
 
+class UserManager: 
+    def __init__(self, database_manager, password_hasher):
+        self.database_manager = database_manager
+        self.password_hasher = password_hasher
 
+    def register_user(self, employee_code, first_name, last_name, email, password): 
+        salt = self.password_hasher.generating_salt()
+        hashed_password = self.password_hasher.hash(password, salt)
 
+        register_query = """INSERT INTO Users(employee_code, first_name, last_name, email, password_hash, password_salt) VALUES(%s, %s, %s, %s, %s, %s)"""
+        paramaters = (employee_code, first_name, last_name, email, hashed_password, salt.hex())
+
+        try: 
+            self.database_manager.execute_command(register_query, paramaters)
+        except psycopg2.Error as error:
+            messagebox.showerror("Error", f"Registration error: {error}")
+            print(f"Registration error: {error}")
+
+    def authenticate_user(self, employee_code, password): 
+        login_query = """SELECT first_name, last_name, password_hash, password_salt FROM Users WHERE employee_code = %s"""
+        
+        try: 
+            cursor = self.database_manager.execute_command(login_query, (employee_code,))
+            user = cursor.fetchone()
+            if user: 
+                first_name, last_name, registered_password, stored_salt = user
+                stored_salt = bytes.fromhex(stored_salt)
+            if self.password_hasher.verify_password(password, stored_salt, registered_password): 
+                return first_name, last_name
+            return None
+        except Exception as error:
+            print(f"Login Error, {error}")
+            return None
+        
 class PasswordHasher: 
     def __init__(self, salt_length=16): 
         self.salt_length = salt_length
@@ -44,355 +96,394 @@ class PasswordHasher:
         new_hash = self.hash(login_password, stored_salt)
         return new_hash == registered_password
 
-class Application(ttk.Window):
+class InventoryManager: 
+    def __init__(self, database_manager): 
+        self.database_manager = database_manager
+
+    def add_product(self, sku, name, price, quantity): 
+        add_product_query = """INSERT INTO Inventory(SKU, name, price, quantity) VALUES(%s, %s, %s, %s)"""
+        parameters = (sku, name, price, quantity)
+
+        try: 
+            self.database_manager.execute_command(add_product_query, parameters)
+        except psycopg2.errors.UniqueViolation:
+            print("Product with SKU already exists")
+        except Exception as error: 
+            print(f"Error adding product: {error}")
+
+    def get_inventory(self): 
+        get_inventory_query = """SELECT product_id, SKU, name, price, quantity FROM Inventory"""
+
+        try:
+            cursor = self.database_manager.execute_command(get_inventory_query)
+            return cursor.fetchall()
+        except Exception as error: 
+            messagebox.showerror("Error", f"Error retrieving inventory: {error}")
+            return []
+        
+    def update_product(self, sku, name, price, quantity, original_sku): 
+        update_product_query = """UPDATE Inventory SET SKU = %s, name = %s, price = %s, quantity =%s WHERE SKU = %s"""
+
+        try: 
+            price = float(price)
+            quantity = int(quantity)
+        except ValueError: 
+            raise ValueError("Invalid format for price or quantity")
+        
+        parameters = (str(sku), str(name), float(price), int(quantity), str(original_sku))
+
+        try: 
+            self.database_manager.execute_command(update_product_query, parameters)
+            messagebox.showinfo("Update Product", f"Product Updated Successfully")
+        except Exception as error: 
+            messagebox.showerror("Error", f"Error while updating products: {error}")
+
+class ClientManager: 
+    def __init__(self, database_manager): 
+        self.database_manager = database_manager
+
+    def add_client(self, client_id, name, contact, street, city, region, postcode, country):
+        client_add_query = """INSERT INTO Clients(client_id, client_name, contact, street_address, city, region, postal_code, country)VALUES (%s,%s,%s,%s,%s,%s,%s,%s)"""
+        paramaters = (client_id, name, contact, street, city, region, postcode, country)
+
+        try: 
+            self.database_manager.execute_command(client_add_query, paramaters)
+            messagebox.showinfo("Success", "Added Client to database")
+        except Exception as error: 
+            messagebox.showerror("Error", f"Encountered this error {error}")
+
+class Application(ttk.Window): 
     def __init__(self): 
-        super().__init__(title = "Sales Order Processing System")
+        super().__init__(title="Fashion Match (Sales Order Processing System)")
         self.geometry("900x400")
-        
-        self.conn = database_connection()
-        self.password_hashed = PasswordHasher()
-        
-        if not self.conn: 
+
+        self.database_manager = DatabaseManager()
+        self.password_hasher = PasswordHasher()
+        self.user_manager = UserManager(self.database_manager, self.password_hasher)
+        self.inventory_manager = InventoryManager(self.database_manager)
+        self.client_manager = ClientManager(self.database_manager)
+
+        if not self.database_manager: 
             messagebox.showerror("Error", "Connection Unsuccessful")
             self.destroy()
-            
         else: 
             self.widgets()
-            
+
     def widgets(self): 
-        
         for widget in self.winfo_children(): 
             widget.destroy()
-            
-        self.label_homepage_welcome = ttk.Label(self, text="Welcome To Fashion Match!")
-        self.label_homepage_welcome.pack(pady=50)
-        
-        self.button_homepage_register = ttk.Button(self, text="Register", command=self.show_registration_page)
-        self.button_homepage_register.pack(pady=10)
-        
-        self.button_homepage_login = ttk.Button(self, text="Login", command=self.user_login)
-        self.button_homepage_login.pack(pady=10)
-        
+
+        self.label_onboarding_welcome = ttk.Label(self, text="Welcome to Fashion Match, your very own Sales Order Processing System")
+        self.label_onboarding_welcome.pack(pady=50)
+
+        self.button_onboarding_register = ttk.Button(self, text="Register", command=self.show_registration_page)
+        self.button_onboarding_register.pack(pady=10)
+
+        self.button_onboarding_login = ttk.Button(self, text="Login", command=self.show_login_page)
+        self.button_onboarding_login.pack(pady=10)
+
+
     def show_registration_page(self): 
-        
         for widget in self.winfo_children(): 
             widget.destroy()
-            
-        self.geometry("900x400")
+
         self.title("Register")
-            
+        self.geometry("900x400")
+
         frame = ttk.Frame(self)
         frame.pack(pady=10)
-        
+
         self.label_register_empcode = ttk.Label(frame, text="Employee Code")
-        self.label_register_empcode.grid(row=0, column=0, padx=10, pady=10, sticky="E")
-        
+        self.label_register_empcode.grid(row=0, column=0, pady=10, padx=5, sticky="e")
+
         self.entry_register_empcode = ttk.Entry(frame)
-        self.entry_register_empcode.grid(row=0, column=1, pady=10)
-        
+        self.entry_register_empcode.grid(row=0, column=1, pady=10, padx=5)
+
         self.label_register_firstname = ttk.Label(frame, text="First Name")
-        self.label_register_firstname.grid(row=1, column=0, padx=10, pady=10, sticky="E")
-        
+        self.label_register_firstname.grid(row=1, column=0, pady=10, padx=5, sticky="e")
+
         self.entry_register_firstname = ttk.Entry(frame)
-        self.entry_register_firstname.grid(row=1, column=1, pady=10)
-        
+        self.entry_register_firstname.grid(row=1, column=1, pady=10, padx=5)
+
         self.label_register_lastname = ttk.Label(frame, text="Last Name")
-        self.label_register_lastname.grid(row=2, column=0, padx=10, pady=10, sticky="E")
-        
+        self.label_register_lastname.grid(row=2, column=0, pady=10, padx=5, sticky="e")
+
         self.entry_register_lastname = ttk.Entry(frame)
-        self.entry_register_lastname.grid(row=2, column=1, pady=10)
-        
+        self.entry_register_lastname.grid(row=2, column=1, pady=10, padx=5)
+
         self.label_register_email = ttk.Label(frame, text="Email")
-        self.label_register_email.grid(row=3, column=0, padx=10, pady=10, sticky="E")
-        
+        self.label_register_email.grid(row=3, column=0, padx=5, pady=10, sticky="e")
+
         self.entry_register_email = ttk.Entry(frame)
-        self.entry_register_email.grid(row=3, column=1, pady=10)
-        
+        self.entry_register_email.grid(row=3, column=1, pady=10, padx=5)
+
         self.label_register_password = ttk.Label(frame, text="Password")
-        self.label_register_password.grid(row=4, column=0, padx=10, pady=10, sticky="E")
-        
+        self.label_register_password.grid(row=4, column=0, padx=5, pady=10, sticky="e")
+
         self.entry_register_password = ttk.Entry(frame)
-        self.entry_register_password.grid(row=4, column=1, pady=10)
-        
+        self.entry_register_password.grid(row=4, column=1, padx=5, pady=10)
+
+        self.button_register_back = ttk.Button(frame, text="Back", command=self.widgets)
+        self.button_register_back.grid(row=5, column=0, padx=5, pady=10, sticky="e")
+
         self.button_register_register = ttk.Button(frame, text="Register", command=self.register_user)
-        self.button_register_register.grid(row=5, column=1, padx=10, pady=10)
-        
-        self.button_register_homepage = ttk.Button(frame, text="Back", command=self.widgets)
-        self.button_register_homepage.grid(row=5, column=0, sticky="E")
-        
+        self.button_register_register.grid(row=5, column=1, padx=5, pady=10, sticky="w")
+
     def register_user(self): 
-        
         employee_code = self.entry_register_empcode.get().strip()
         first_name = self.entry_register_firstname.get().strip()
         last_name = self.entry_register_lastname.get().strip()
         email = self.entry_register_email.get().strip()
         password = self.entry_register_password.get().strip()
 
-        if not employee_code or not first_name or not last_name or not email: 
-            messagebox.showerror("Error", "You must fill all boxes!")
-            return
 
-        salt = self.password_hashed.generating_salt()
-        hashed_password = self.password_hashed.hash(password, salt)
-
-        self.insert_user(employee_code, first_name, last_name, email, hashed_password, salt)
-    
-    def insert_user(self, employee_code, first_name, last_name, email, hashed_password, salt):
-        try: 
-            cursor = self.conn.cursor()
-            inserter = """INSERT INTO Users(employee_code, first_name, last_name, email, password_hash, password_salt) VALUES (%s, %s, %s, %s, %s, %s)"""
-            cursor.execute(inserter, (employee_code, first_name, last_name, email, hashed_password, salt.hex()))
-            self.conn.commit()
-            cursor.close()
-            messagebox.showinfo("Success", "You have been successfully registered!")
-            self.clear_entrybox()
-            
-            self.widgets()
-            
-        except psycopg2.Error as error: 
-            print(f"Found this error while trying to insert {error}")
-            
-    def clear_entrybox(self): 
-        self.entry_register_empcode.delete(0, ttk.END)
-        self.entry_register_firstname.delete(0, ttk.END)
-        self.entry_register_lastname.delete(0, ttk.END)
-        self.entry_register_email.delete(0, ttk.END)
-        self.entry_register_password.delete(0, ttk.END)
-        
-    def user_login(self): 
-        
-        for widget in self.winfo_children(): 
-            widget.destroy()
-            
-        frame = ttk.Frame()
-        frame.pack(pady=10)
-        
-        self.label_login_empcode = ttk.Label(frame, text="Employee Code")
-        self.label_login_empcode.grid(row=0, column=0, padx=10, pady=10, sticky="E")
-        
-        self.entry_login_empcode = ttk.Entry(frame)
-        self.entry_login_empcode.grid(row=0, column=1, pady=10)
-        
-        self.label_login_password = ttk.Label(frame, text="Password")
-        self.label_login_password.grid(row=1, column=0, padx=10, pady=10, sticky="E")
-        
-        self.entry_login_password = ttk.Entry(frame)
-        self.entry_login_password.grid(row=1, column=1, pady=10)
-        
-        self.button_login_login = ttk.Button(frame, text="Login", command=self.auth_userlogin)
-        self.button_login_login.grid(row=2, column=1, padx=10, pady=10)
-        
-        self.button_login_homepage = ttk.Button(frame, text="Back", command=self.widgets)
-        self.button_login_homepage.grid(row=2, column=0, sticky="E")
-
-    def auth_userlogin(self): 
-        
-        employee_code = self.entry_login_empcode.get().strip()
-        login_password = self.entry_login_password.get().strip()
-        
-        if not employee_code or not login_password: 
-            messagebox.showerror("Error", "You must fill in all boxes!")
+        if not employee_code or not first_name or not last_name or not email or not password: 
+            messagebox.showerror("Error", "All Fields are Required")
             return
         
-        try: 
-            cursor = self.conn.cursor()
+        self.user_manager.register_user(employee_code, first_name, last_name, email, password)
+        messagebox.showinfo("Success", "You have been successfully registered")
+        self.clear_entrybox()
+        self.widgets()
 
-            authenticator = sql.SQL("""SELECT first_name, last_name, password_hash, password_salt FROM Users WHERE employee_code = %s""")
-            cursor.execute(authenticator, (employee_code,))
-            user = cursor.fetchone()
-            cursor.close()
-            
-            if user: 
-                first_name, last_name, registred_password, stored_salt = user
-                stored_salt = bytes.fromhex(stored_salt)
-                if self.password_hashed.verify_password(login_password, stored_salt, registred_password):
-                    messagebox.showinfo("Success", "You have successfully logged in")
-                    self.show_main_window(first_name, last_name)
-                else: 
-                    messagebox.showerror("Invalid Credentials", "Incorrect Password")
-            else: 
-                messagebox.showerror("Invalid Credentials", "No user found with this employee code")
-            
-        except Exception as error: 
-            messagebox.showerror("Database Error:", error)
-            
-            
-    def show_main_window(self, first_name, last_name): 
-        
+    def clear_entrybox(self):
+        self.entry_register_empcode.delete(0, ttk.END) 
+        self.entry_register_firstname.delete(0, ttk.END) 
+        self.entry_register_lastname.delete(0, ttk.END) 
+        self.entry_register_email.delete(0, ttk.END) 
+        self.entry_register_password.delete(0, ttk.END) 
+
+
+    def show_login_page(self): 
         for widget in self.winfo_children(): 
             widget.destroy()
-        
-        
+
+        self.title("Login")
         self.geometry("900x400")
-        self.title("Home Page")
+
+        frame = ttk.Frame(self)
+        frame.pack(pady=10)
+
+        self.label_login_empcode = ttk.Label(frame, text="Employee Code")
+        self.label_login_empcode.grid(row=0, column=0, pady=10, padx=5, sticky="e")
+
+        self.entry_login_empcode = ttk.Entry(frame)
+        self.entry_login_empcode.grid(row=0, column=1, padx=5, pady=10)
+
+        self.label_login_password = ttk.Label(frame, text="Password")
+        self.label_login_password.grid(row=1, column=0, padx=5, pady=10, sticky="e")
+
+        self.entry_login_password = ttk.Entry(frame)
+        self.entry_login_password.grid(row=1, column=1, pady=10, padx=5)
+
+        self.button_login_back = ttk.Button(frame, text="Back", command=self.widgets)
+        self.button_login_back.grid(row=2, column=0, pady=10, padx=5, sticky="e")
+
+        self.button_login_login = ttk.Button(frame, text="Login", command=self.login_user)
+        self.button_login_login.grid(row=2, column=1, padx=5, pady=10, sticky="w")
+
+    def login_user(self): 
+        employee_code = self.entry_login_empcode.get().strip()
+        password = self.entry_login_password.get().strip()
+
+        if not employee_code or not password: 
+            messagebox.showerror("Error", "All Fields are Required")
+            return
         
-        self.navigation_frame = ttk.Frame(self)
-        self.navigation_frame.pack(side=TOP, fill=X)
-        
-        self.content_frame = ttk.Frame(self)
-        self.content_frame.pack(fill=BOTH, expand=True)
-        
-        self.button_main_logout = ttk.Button(self.navigation_frame, text="Logout", command=self.widgets)
-        self.button_main_logout.pack(side=LEFT, padx=5, pady=5)
-        
-        self.button_main_home = ttk.Button(self.navigation_frame, text="Home", command=lambda: self.show_home(first_name, last_name))
-        self.button_main_home.pack(side=LEFT, padx=5, pady=5)
-        
-        self.label_main_welcome = ttk.Label(self.content_frame, text=f"Welcome {first_name} {last_name}")
-        self.label_main_welcome.pack(pady=10)
-        
-        self.button_main_inventory = ttk.Button(self.navigation_frame, text="Inventory", command=self.display_inventory)
-        self.button_main_inventory.pack(side=LEFT, padx= 5, pady=5)
-        
-        self.show_home(first_name, last_name)
-        
-    def show_home(self, first_name, last_name): 
-        
-        for widget in self.content_frame.winfo_children(): 
+        user_data = self.user_manager.authenticate_user(employee_code, password)
+
+        if user_data:
+            first_name, last_name = user_data
+            messagebox.showinfo("Success", "Login Successful")
+            self.show_main_window(first_name, last_name)
+
+    def show_main_window(self, first_name, last_name): 
+        for widget in self.winfo_children(): 
             widget.destroy()
-            
+
         self.title("Home Page")
-        
-        self.label_home_welcome = ttk.Label(self.content_frame, text=f"Welcome {first_name} {last_name}")
-        self.label_home_welcome.pack(pady=10)
+        self.geometry("900x400")
 
-        
-    def display_inventory(self):
+        self.navigation_page = ttk.Frame(self)
+        self.navigation_page.pack(side=TOP, fill=X)
 
-        for widget in self.content_frame.winfo_children(): 
+        self.content_page = ttk.Frame(self)
+        self.content_page.pack(fill=BOTH, expand=True)
+        
+        self.button_main_logout = ttk.Button(self.navigation_page, text="Logout", bootstyle="DANGER", command=self.widgets)
+        self.button_main_logout.pack(side=LEFT, pady=10, padx=5)
+
+        self.button_main_home = ttk.Button(self.navigation_page, text="Home", command=lambda: self.show_main_window(first_name, last_name))
+        self.button_main_home.pack(side=LEFT, padx=5, pady=10)
+
+        self.label_main_welcome = ttk.Label(self.content_page, text=f"Welcome {first_name} {last_name}")
+        self.label_main_welcome.pack(pady=10, padx=5)
+
+        self.button_main_inventory = ttk.Button(self.content_page, text="Inventory", command=self.show_inventory)
+        self.button_main_inventory.pack(pady=10, padx=5)
+
+        self.button_main_clients = ttk.Button(self.content_page, text="Clients", bootstyle="SUCCESS", command=None)
+        self.button_main_clients.pack(padx=5, pady=10)
+
+        self.button_main_orders = ttk.Button(self.content_page, text="Orders", bootstyle="DANGER",command=None)
+        self.button_main_orders.pack(padx=5, pady=10)
+
+    def show_inventory(self):
+        for widget in self.content_page.winfo_children(): 
             widget.destroy()
 
         self.title("Inventory")
+        self.geometry("900x600")
 
-        self.button_inventory_add = ttk.Button(self.content_frame, text="Add Product", command=self.add_products)
-        self.button_inventory_add.pack(side=TOP, padx=5, pady=5)
-        
-        #put edit product button here
-        self.button_edit_product = ttk.Button(self.content_frame, text="Edit Product", command=self.edit_product)
-        self.button_edit_product.pack(side=TOP, padx=5, pady=5)
+        self.inventory_search_var = ttk.StringVar()
+        inventory_search_frame = ttk.Frame(self.content_page)
+        inventory_search_frame.pack(padx=10, pady=10, fill=X)
 
-        columns = ('SKU', 'Name', "Price/SQM", "Quantity")
-        self.tree_inventory_list = ttk.Treeview(self.content_frame, columns=columns, show="headings")
-        
-        
+        self.label_inventory_search = ttk.Label(inventory_search_frame, text="Search Product (SKU or Name):")
+        self.label_inventory_search.pack(side=LEFT, padx=(150,5),pady=(80,0))
+
+        self.entry_inventory_search = ttk.Entry(inventory_search_frame, textvariable=self.inventory_search_var, width=30)
+        self.entry_inventory_search.pack(side=LEFT, pady=(80,0),padx=5)
+
+        self.button_inventory_search = ttk.Button(inventory_search_frame, text="Search", command=self.search_inventory)
+        self.button_inventory_search.pack(side=LEFT, padx=5, pady=(80,0))
+
+        self.button_inventory_clear = ttk.Button(inventory_search_frame, text="Clear", command=self.clear_search)
+        self.button_inventory_clear.pack(side=LEFT, padx=5, pady=(80,0))
+
+        columns = ("Product ID", "SKU", "Name", "Price/SQM", "Quantity")
+        self.tree_inventory_list = ttk.Treeview(self.content_page, columns=columns, show="headings")
+    
+        self.tree_inventory_list.heading("Product ID", text="Product ID", anchor="center")
         self.tree_inventory_list.heading("SKU", text="SKU", anchor="center")
         self.tree_inventory_list.heading("Name", text="Name", anchor="center")
         self.tree_inventory_list.heading("Price/SQM", text="Price/SQM", anchor="center")
         self.tree_inventory_list.heading("Quantity", text="Quantity", anchor="center")
         
-        self.tree_inventory_list.column("SKU", width="100", anchor="center", stretch=False)
+        self.tree_inventory_list.column("Product ID", width=100, anchor="center", stretch=False)
+        self.tree_inventory_list.column("SKU", width=100, anchor="center", stretch=False)
         self.tree_inventory_list.column("Name", width=150, anchor="center", stretch=False)
         self.tree_inventory_list.column("Price/SQM", width=100, anchor="center", stretch=False)
         self.tree_inventory_list.column("Quantity", width=250, anchor="center", stretch=False)
         
-        scrollbar = ttk.Scrollbar(self.content_frame, orient="vertical", command=self.tree_inventory_list.yview)
+        scrollbar = ttk.Scrollbar(self.content_page, orient="vertical", command=self.tree_inventory_list.yview)
         self.tree_inventory_list.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
-        
-        self.tree_inventory_list.pack(expand=True, padx=10, pady=10)
+        self.tree_inventory_list.pack(expand=True, padx=10, pady=(10,0))
 
-        try: 
-            cursor = self.conn.cursor()
-            displayer = """SELECT SKU, name, price_per_sqm, quantity FROM Inventory"""
+        inventory_data = self.inventory_manager.get_inventory()
 
-            cursor.execute(displayer)
-            inventory=cursor.fetchall()
-            cursor.close()
+        for product in inventory_data: 
+            self.tree_inventory_list.insert('', 'end', values=product)
 
-            for product in inventory: 
-                self.tree_inventory_list.insert('', 'end', value=product)
+        self.load_inventory_data()
 
-        except Exception as error: 
-            messagebox.showerror("Error", f"Encountered this: {error}")
+        self.button_inventory_add = ttk.Button(self.content_page, text="Add Product", bootstyle="SUCCESS", command=self.show_productadd)
+        self.button_inventory_add.pack(pady=(10,5))
 
-    def add_products(self): 
-        
-        for widget in self.content_frame.winfo_children(): 
+        self.button_inventory_edit = ttk.Button(self.content_page, text="Edit Product", bootstyle="WARNING", command=self.show_edit_window)
+        self.button_inventory_edit.pack(pady=(5,50))
+
+    def load_inventory_data(self, data=None): 
+
+        for item in self.tree_inventory_list.get_children(): 
+            self.tree_inventory_list.delete(item)
+
+        inventory_data = data if data else self.inventory_manager.get_inventory()
+
+        for product in inventory_data: 
+            self.tree_inventory_list.insert('', 'end', values=product)
+
+    def search_inventory(self): 
+        search_item = self.inventory_search_var.get().lower()
+
+        inventory_data = self.inventory_manager.get_inventory()
+
+        filtered_data = [
+            product for product in inventory_data
+            if search_item in str(product[1]).lower() or
+               search_item in str(product[2]).lower()
+        ]
+
+        self.load_inventory_data(filtered_data)
+
+    def clear_search(self): 
+        self.inventory_search_var.set("")
+        self.load_inventory_data()
+
+    def show_productadd(self): 
+        for widget in self.content_page.winfo_children(): 
             widget.destroy()
 
-        self.title("Add Product to Inventory")
+        self.title("Add Product")
+        self.geometry("900x400")
 
-        frame = self.content_frame
+        self.label_productadd_sku = ttk.Label(self.content_page, text="SKU")
+        self.label_productadd_sku.grid(row=0, column=0, padx=5, pady=10, sticky = "e")
 
-        self.label_productadd_sku = ttk.Label(frame, text="SKU")
-        self.label_productadd_sku.grid(row=0, column=0, padx=5, pady=10)
-
-        self.entry_productadd_sku = ttk.Entry(frame)
+        self.entry_productadd_sku = ttk.Entry(self.content_page)
         self.entry_productadd_sku.grid(row=0, column=1, padx=5, pady=10)
 
-        self.label_productadd_name = ttk.Label(frame, text="Name")
-        self.label_productadd_name.grid(row=1, column=0, padx=5, pady=10)
+        self.label_productadd_name = ttk.Label(self.content_page, text="Product Name")
+        self.label_productadd_name.grid(row=1, column=0, pady=10, padx=5, sticky="e")
 
-        self.entry_productadd_name = ttk.Entry(frame)
+        self.entry_productadd_name = ttk.Entry(self.content_page)
         self.entry_productadd_name.grid(row=1, column=1, padx=5, pady=10)
 
-        self.label_productadd_price = ttk.Label(frame, text="Price Per SQM")
-        self.label_productadd_price.grid(row=2, column=0, padx=5, pady=10)
+        self.label_productadd_price = ttk.Label(self.content_page, text="Price Per Sheet")
+        self.label_productadd_price.grid(row=2, column=0, pady=10, padx=5, stick="e")
 
-        self.entry_productadd_price = ttk.Entry(frame)
-        self.entry_productadd_price.grid(row=2, column=1, padx=5, pady=10)
+        self.entry_productadd_price = ttk.Entry(self.content_page)
+        self.entry_productadd_price.grid(row=2, column=1, pady=10, padx=5)
 
-        self.label_productadd_quantity = ttk.Label(frame, text="Quantity")
-        self.label_productadd_quantity.grid(row=3, column=0, padx=5, pady=10)
+        self.label_productadd_quantity = ttk.Label(self.content_page, text="Quantity")
+        self.label_productadd_quantity.grid(row=3, column=0, pady=10, padx=5, sticky="e")
 
-        self.entry_productadd_quantity = ttk.Entry(frame)
+        self.entry_productadd_quantity = ttk.Entry(self.content_page)
         self.entry_productadd_quantity.grid(row=3, column=1, padx=5, pady=10)
 
-        self.button_productadd_save = ttk.Button(frame, text="Save", command=self.save_product, bootstyle=SUCCESS)
-        self.button_productadd_save.grid(row=4, column=0, columnspan=2)
+        self.button_productadd_back = ttk.Button(self.content_page, text="Back", command=self.show_inventory)
 
+        self.button_productadd_add = ttk.Button(self.content_page, text="Add Product", command=self.add_product)
+        self.button_productadd_add.grid(row=4, column=1, padx=5, pady=10, sticky="w")
 
-    def save_product(self): 
-
+    def add_product(self): 
         sku = self.entry_productadd_sku.get().strip()
         name = self.entry_productadd_name.get().strip()
-        price_per_sqm = self.entry_productadd_price.get().strip()
+        price = self.entry_productadd_price.get().strip()
         quantity = self.entry_productadd_quantity.get().strip()
 
-        if not sku or not name or not price_per_sqm: 
-            messagebox.showerror("ERROR", "All Fields Are Required")
 
-        try: 
-            cursor = self.conn.cursor()
-
-            save_product = sql.SQL("""
-                                   INSERT INTO Inventory(SKU, name, price_per_sqm, quantity) VALUES (%s, %s, %s, %s)
-                                   """)
-
-            cursor.execute(save_product, (str(sku),  name, price_per_sqm, quantity))
-            self.conn.commit()
-            cursor.close()
-            messagebox.showinfo("SUCCESS", "Added new product to product list")
-            self.display_inventory()
-        except psycopg2.errors.UniqueViolation: 
-            self.conn.rollback()
-            messagebox.showerror("ERROR", "Product with this SKU already exists")
-            
-        except Exception as error: 
-            messagebox.showerror("ERROR", f"Encountered this error: {error}")
-            
-    def edit_product(self): 
-        #maybe make it so that you can see the old name as well as the new name when you type it in
+        if not sku or not name or not price or not quantity: 
+            messagebox.showerror("Error", "All fields are required")
+            return
         
+        self.inventory_manager.add_product(sku, name, price, quantity)
+        messagebox.showinfo("Success", "Product added successfully")
+        self.show_inventory()
+
+    def show_edit_window(self):
+
         selected_product = self.tree_inventory_list.selection()
         if not selected_product: 
-            messagebox.showerror("Error", "Please select an item")
+            messagebox.showerror("Error", "Please select a product to edit")
             return
         
+        original_sku = self.tree_inventory_list.item(selected_product)['values'][1]
         product_values = self.tree_inventory_list.item(selected_product)['values']
-        
-        if not product_values: 
-            messagebox.showerror("Error", "Selecte product has no data")
-            return
 
-        editing_window = ttk.Toplevel(self)
-        editing_window.title("Edit Product")
-        editing_window.geometry("500x500")
-        editing_window.resizable(False, False)
+        if not product_values: 
+            messagebox.showerror("Error", "Couldn't retrieve product information")
+            return
         
-        frame = ttk.Frame(editing_window)
-        frame.pack(pady=10, fill='x', expand=True)
-        
+        edit_window = ttk.Toplevel(self)
+        edit_window.title("Edit Product")
+        edit_window.geometry("500x400")
+        edit_window.resizable(False, False)
+
+        frame = ttk.Frame(edit_window)
+        frame.pack(fill='x', pady=10, expand=True)
+
         for row in range(6): 
             frame.rowconfigure(row, weight=1)
             
@@ -404,79 +495,71 @@ class Application(ttk.Window):
         
         self.entry_edit_sku = ttk.Entry(frame)
         self.entry_edit_sku.grid(row=0, column=2, sticky="w", pady=10)
-        self.entry_edit_sku.insert(0, product_values[0])
+        self.entry_edit_sku.insert(0, product_values[1])
         
         self.label_edit_name = ttk.Label(frame, text="New name")
         self.label_edit_name.grid(row=1, column=1, padx=10, pady=10)
         
         self.entry_edit_name = ttk.Entry(frame)
         self.entry_edit_name.grid(row=1, column=2, sticky="w", pady=10)
-        self.entry_edit_name.insert(0, product_values[1])
+        self.entry_edit_name.insert(0, product_values[2])
         
-        self.label_edit_price = ttk.Label(frame, text="New price per SQM")
+        self.label_edit_price = ttk.Label(frame, text="New Price")
         self.label_edit_price.grid(row=2, column=1, padx=10, pady=10)
         
         self.entry_edit_price = ttk.Entry(frame)
         self.entry_edit_price.grid(row=2, column=2, sticky="w", pady=10)
-        self.entry_edit_price.insert(0, product_values[2])
+        self.entry_edit_price.insert(0, product_values[3])
         
         self.label_edit_quantity = ttk.Label(frame, text="New Quantity")
         self.label_edit_quantity.grid(row=3, column=1, padx=10, pady=10)
         
         self.entry_edit_quantity = ttk.Entry(frame)
         self.entry_edit_quantity.grid(row=3, column=2, sticky="w", pady=10)
-        self.entry_edit_quantity.insert(0, product_values[3])
-        
-        self.button_edit_save = ttk.Button(frame, text="Save Changes", bootstyle=SUCCESS, command=lambda: self.save_edit_changes(self.entry_edit_sku.get().strip(), self.entry_edit_name.get().strip(), self.entry_edit_price.get().strip(), self.entry_edit_quantity.get().strip(), editing_window))
-        self.button_edit_save.grid(row=4, column=1, columnspan=2, pady=10)
-        
-    def save_edit_changes(self, sku, name, price_per_sqm, quantity, frame): 
+        self.entry_edit_quantity.insert(0, product_values[4])
 
-        if not sku or not name or not price_per_sqm or not quantity:
-            messagebox.showerror("Error", "All fields are required")
-            return
-        
-        try: 
-            price_per_sqm = float(price_per_sqm)
-        except ValueError: 
-            messagebox.showerror("Error", "Price must be an integer or decimal number")
-            return
+        self.button_edit_back = ttk.Button(frame, text="Back", bootstyle="DANGER", command=edit_window.destroy)
+        self.button_edit_back.grid(row=4, column=0, pady=10, padx=5, sticky="e")
 
+        self.button_edit_update = ttk.Button(frame, text="Update Product", bootstyle="SUCCESS", command=lambda: self.update_product(self.entry_edit_sku.get().strip(), self.entry_edit_name.get().strip(), self.entry_edit_price.get().strip(), self.entry_edit_quantity.get().strip(), original_sku, edit_window))
+        self.button_edit_update.grid(row=4, column=1, pady=10, padx=5, sticky="w")
+
+    def update_product(self, sku, name, price, quantity, original_sku, edit_window):
         try: 
-            cursor = self.conn.cursor()
-                
-            selected_item = self.tree_inventory_list.selection()
-            original_sku = self.tree_inventory_list.item(selected_item)['values'][0]
-                
-            if sku != original_sku: 
-                cursor.execute("SELECT SKU FROM Inventory WHERE SKU = %s AND SKU != %s", (str(sku), str(original_sku)))
-                if cursor.fetchone(): 
-                    messagebox.showerror("Error", "Another product with this SKU already exists")
-                    return
-        
-            updating_inventory = sql.SQL("""UPDATE Inventory SET SKU = %s, name = %s, price_per_sqm = %s, quantity = %s WHERE SKU = %s""")
-            cursor.execute(updating_inventory, (str(sku), name, price_per_sqm, quantity, str(original_sku)))
-            self.conn.commit()
-            messagebox.showinfo("Success", "Product has been updated")
-            self.display_inventory()
-            frame.destroy()
-        
-        except psycopg2.errors.UniqueViolation: 
-            self.conn.rollback()
-            messagebox.showerror("Error", "Product with this SKU already exists")
+            self.inventory_manager.update_product(sku, name, price, quantity, original_sku)
+
+            self.show_updated_inventory()
+            edit_window.destroy()
+
         except Exception as error: 
-            self.conn.rollback()
-            messagebox.showerror("Error", f"Encountered this error: {error}")
-            print(f"Encountered this error: {error}")
+            messagebox.showerror("Error", f"Encountered this error {error}")
+
+    def show_updated_inventory(self): 
+        for item in self.tree_inventory_list.get_children(): 
+            self.tree_inventory_list.delete(item)
+
+        updated_inventory = self.inventory_manager.get_inventory()
+
+        for product in updated_inventory: 
+            self.tree_inventory_list.insert('', 'end', values=product)
+
+    def show_clients(self): 
+        for widget in self.content_page.winfo_children(): 
+            widget.destory()
+
+        self.title("Inventory")
+        self.geometry("900x600")
+
+        self.client_search_var = ttk.StringVar()
+        clients_search_frame = ttk.Frame(self.content_page)
+        clients_search_frame.pack(padx=10, pady=10, fill=X)
 
 if __name__ == "__main__":
     NEA_tables.create_tables()
+
     app = Application()
     app.mainloop()
-    
-    #things that are next in line
-        #search bar for inventory
-        #clients
-        #orders
-        #deliveries
-        #reports
+        
+
+
+
