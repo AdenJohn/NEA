@@ -849,15 +849,17 @@ class Application(ttk.Window):
                 self.entry_clientedit_city.get().strip(),
                 self.entry_clientedit_region.get().strip(),
                 self.entry_clientedit_postcode.get().strip(),
-                self.entry_clientedit_country.get().strip(), original_email))
+                self.entry_clientedit_country.get().strip(), original_email, edit_window))
         
         self.button_clientedit_save.grid(row=8, column=1, padx=10, pady=10, sticky="w")
         
-    def update_client(self, name, email, phone, street, city, region, postcode, country, original_email): 
+    def update_client(self, name, email, phone, street, city, region, postcode, country, original_email, edit_window): 
         try: 
             full_address = f"{street}, {city}, {region}, {postcode}, {country}"
             self.client_manager.update_clients(name, email, phone, street, city, region, postcode, country, full_address, original_email)
-            self.show_updated_clients()  
+            edit_window.destroy()
+            self.show_updated_clients()
+
         except Exception as error: 
             messagebox.showerror("Error", f"Encountered this error: {error}")
             
@@ -866,9 +868,10 @@ class Application(ttk.Window):
             self.tree_clients_list.delete(item)
             
         updated_clients = self.client_manager.get_clients()
-        
-        for client in updated_clients: 
-            self.tree_clients_list.insert('', 'end', values=client)
+        updated_clients_filtered = self.filter_client_data(updated_clients)
+
+        for client in updated_clients_filtered: 
+            self.tree_clients_list.insert('','end',values=client)
 
 if __name__ == "__main__":
     NEA_tables.create_tables()
@@ -876,3 +879,21 @@ if __name__ == "__main__":
     app = Application()
     app.mainloop()
         
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
