@@ -52,6 +52,28 @@ def create_tables():
 
         cursor.execute(create_clients_table)
 
+        create_orders_table = """CREATE TABLE IF NOT EXISTS Orders(
+            order_id SERIAL PRIMARY KEY, 
+            client_id INT REFERENCES Clients(client_id),
+            order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
+            total_price DECIMAL(10,2), 
+            order_status VARCHAR(50) DEFAULT 'PENDING',
+            payment_status VARCHAR(50) DEFAULT 'Unpaid', 
+            delivery_address TEXT, 
+            estimated_deliverydate DATE, 
+            delivery_date DATE);"""
+        
+        cursor.execute(create_orders_table)
+
+        create_orderitems_table = """CREATE TABLE IF NOT EXISTS OrderItems(
+            order_item_id SERIAL PRIMARY KEY,
+            order_id INT REFERENCES Orders(order_id) ON DELETE CASCADE, 
+            product_id INT REFERENCES Inventory(product_id),
+            product_quantity INT NOT NULL, 
+            item_total_price DECIMAL(10,2) NOT NULL);"""
+        
+        cursor.execute(create_orderitems_table)
+
         conn.commit()
         cursor.close()
         conn.close()
@@ -63,4 +85,3 @@ def create_tables():
 if __name__ == "__main__": 
     create_tables()
         
-
