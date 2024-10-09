@@ -2,6 +2,7 @@ import os
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 import psycopg2
+from datetime import datetime
 from psycopg2 import sql
 from tkinter import messagebox
 import NEA_tables
@@ -175,6 +176,107 @@ class ClientManager:
         except Exception as error: 
             messagebox.showerror("Error", f"Encountered this error {error}")
 
+class OrdersManager: 
+    def __init__(self, database_manager): 
+        self.database_manager = database_manager
+
+    def add_order(self, client_id, total_price, delivery_address, estimated_deliverydate, payment_status, order_status):
+
+        add_order_query = """INSERT INTO Orders(client_id, total_price, delivery_address, estimated_deliverydate, payment_status, order_status)VALUES(%s,%s,%s,%s,%s,%s) RETURNING order_id"""
+        paramaters = (client_id, total_price, delivery_address, estimated_deliverydate, payment_status, order_status)
+
+        try: 
+            cursor = self.database_manager.execute_command(add_order_query, paramaters)
+            order_id = cursor.fetchone()[0]
+            messagebox.showinfo("SUCCESS", f"Order {order_id} has been successfully added")
+            return order_id
+        except Exception as error: 
+            messagebox.showerror("", f"Error: {error}")
+            return None
+        
+    def add_order_item(self, order_id, product_id, product_quantity, item_total_price): 
+        add_item_query = """INSERT INTO OrderItems(order_id, product_id, product_quantity, item_total_price) VALUES(%s,%s,%s,%s);"""
+        paramaters = (order_id, product_id, product_quantity, item_total_price)
+
+        self.database_manager.execute_command(add_item_query, paramaters)
+
+    def order_with_items(self, client_id, delivery_address, estimated_deliverydate, payment_status, order_status, items): 
+        
+        total_price = sum(item[2] for item in items)
+
+        order_id = self.add_order(client_id, total_price, delivery_address, estimated_deliverydate, payment_status, order_status)
+
+        for product_id, product_quantity, item_total_price in items: 
+            self.add_order_item(order_id, product_id, product_quantity, item_total_price)
+
+        return order_id
+
+    def show_all_orders(self): 
+        show_orders_query = """SELECT order_id, client_id, order_date, total_price, estimated_deliverydate, order_status FROM Orders ORDER BY order_id;"""
+
+        try: 
+            cursor = self.database_manager.execute_command(show_orders_query)
+            return cursor.fetchall()
+        except Exception as error: 
+            messagebox.showerror("Error", f"Error {error}")
+            return[]
+        
+    def get_all_products(self): 
+
+        get_products_query = """SELECT product_id, name, price FROM Inventory ORDER BY product_id ASC;"""
+
+        cursor = self.database_manager.execute_command(get_products_query)
+        return cursor.fetchall()
+
+    def edit_order(self, order_id, new_estimated_deliverydate=None, new_payment_status=None, new_order_status=None): 
+
+        edit_order_query = """UPDATE Orders SET
+            estimated_deliverydate = COALESCE(%s, estimated_deliverydate),
+            payment_status = COALESCE(%s, payment_status),
+            order_status = COALESCE(%s, order_status)
+        WHERE order_id= %s"""
+
+        paramaters = (new_estimated_deliverydate, new_payment_status, new_order_status, order_id)
+
+        try: 
+            self.database_manager.execute_command(edit_order_query, paramaters)
+            messagebox.showinfo("Updated Order")
+        except Exception as error: 
+            messagebox.showerror("Error", f"Error: {error}")
+
+    def view_order(self, order_id):
+
+        view_order_query = """SELECT o.order_id, o.client_id, o.order_date, o.total_price,
+        o.order_status, o.payment_status, o.estimated_deliverydate, o.delivery_date, 
+        c.client_name, c.client_email, c.client_phone, c.full_address
+        FROM Orders o, Clients c
+        WHERE o.client_id = c.client_id AND o.order_id = %s;"""
+
+        cursor = self.database_manager.execute_command(view_order_query, (order_id,))
+        return cursor.fetchone()
+    
+    def delete_order(self, order_id): 
+        
+        delete_order_query = """DELETE FROM Orders WHERE order_id = %s"""
+        self.database_manager.execute_command(delete_order_query, (order_id,))
+
+    def get_all_clients(self): 
+
+        get_all_clients_query = """SELECT client_id, client_name FROM Clients ORDER BY client_id ASC;"""
+
+        try: 
+            cursor = self.database_manager.execute_command(get_all_clients_query)
+            return cursor.fetchall()
+        except Exception as error: 
+            messagebox.showerror("Error", f"Error: {error}")
+            return []
+
+    def get_client_address(self, client_id):
+        get_client_address_query = """SELECT full_address FROM Clients WHERE client_id = %s"""
+        cursor = self.database_manager.execute_command(get_client_address_query, (client_id,))
+        address = cursor.fetchone()
+        return address[0] if address else ""
+
 class Application(ttk.Window): 
     def __init__(self): 
         super().__init__(title="Fashion Match (Sales Order Processing System)")
@@ -185,6 +287,7 @@ class Application(ttk.Window):
         self.user_manager = UserManager(self.database_manager, self.password_hasher)
         self.inventory_manager = InventoryManager(self.database_manager)
         self.client_manager = ClientManager(self.database_manager)
+        self.orders_manager = OrdersManager(self.database_manager)
 
         if not self.database_manager: 
             messagebox.showerror("Error", "Connection Unsuccessful")
@@ -204,7 +307,6 @@ class Application(ttk.Window):
 
         self.button_onboarding_login = ttk.Button(self, text="Login", command=self.show_login_page)
         self.button_onboarding_login.pack(pady=10)
-
 
     def show_registration_page(self): 
         for widget in self.winfo_children(): 
@@ -275,7 +377,6 @@ class Application(ttk.Window):
         self.entry_register_lastname.delete(0, ttk.END) 
         self.entry_register_email.delete(0, ttk.END) 
         self.entry_register_password.delete(0, ttk.END) 
-
 
     def show_login_page(self): 
         for widget in self.winfo_children(): 
@@ -350,7 +451,7 @@ class Application(ttk.Window):
         self.button_main_clients = ttk.Button(self.content_page, text="Clients", bootstyle="SUCCESS", command=self.show_clients)
         self.button_main_clients.pack(padx=5, pady=10)
 
-        self.button_main_orders = ttk.Button(self.content_page, text="Orders", bootstyle="DANGER",command=None)
+        self.button_main_orders = ttk.Button(self.content_page, text="Orders", bootstyle="DANGER",command=self.show_order_window)
         self.button_main_orders.pack(padx=5, pady=10)
 
     def show_inventory(self):
@@ -648,7 +749,6 @@ class Application(ttk.Window):
         
         return filtered_data
         
-    
     def search_clients(self): 
         search_client = self.client_search_var.get().lower()
 
@@ -873,12 +973,178 @@ class Application(ttk.Window):
         for client in updated_clients_filtered: 
             self.tree_clients_list.insert('','end',values=client)
 
+    def show_order_window(self): 
+        for widget in self.content_page.winfo_children(): 
+            widget.destroy()
+
+        self.title("Orders")
+        self.geometry("1200x600")
+
+        self.order_search_var = ttk.StringVar()
+        orders_search_frame = ttk.Frame(self.content_page)
+        orders_search_frame.pack(padx=10, pady=10, fill=X)
+
+        self.label_orders_search = ttk.Label(orders_search_frame, text="Search Orders: ")
+        self.label_orders_search.pack(side=LEFT, padx=(400,5), pady=(80,0))
+
+        self.entry_orders_search = ttk.Entry(orders_search_frame)
+        self.entry_orders_search.pack(side=LEFT, pady=(80,0),padx=5)
+
+        self.button_clients_search = ttk.Button(orders_search_frame, text="Search", bootstyle="SUCCESS", command=self.search_orders)
+        self.button_clients_search.pack(side=LEFT, padx=5, pady=(80,0))
+
+        self.button_clients_clear = ttk.Button(orders_search_frame, text="Clear", bootstyle="DANGER", command=self.clear_orders_search)
+        self.button_clients_clear.pack(side=LEFT, padx=5, pady=(80,0))
+
+        columns = ("Order ID", "Client ID", "Order Date", "Total Price", "Estimated Delivery Date", "Order Status")
+        self.tree_orders_list = ttk.Treeview(self.content_page, columns=columns, show="headings")
+
+        self.tree_orders_list.heading("Order ID", text="Order ID", anchor="center")
+        self.tree_orders_list.heading("Client ID", text="Client ID", anchor="center")
+        self.tree_orders_list.heading("Order Date", text="Order Date", anchor="center")
+        self.tree_orders_list.heading("Total Price", text="Total Price", anchor="center")
+        self.tree_orders_list.heading("Estimated Delivery Date", text="Estimated Delivery Date", anchor="center")
+        self.tree_orders_list.heading("Order Status", text="Order Status", anchor="center")
+
+        self.tree_orders_list.column("Order ID", width=100, anchor="center", stretch=False)
+        self.tree_orders_list.column("Client ID", width=100, anchor="center", stretch=False)
+        self.tree_orders_list.column("Order Date", width=200, anchor="center", stretch=False)
+        self.tree_orders_list.column("Total Price", width=200, anchor="center", stretch=False)
+        self.tree_orders_list.column("Estimated Delivery Date", width=200, anchor="center", stretch=False)
+        self.tree_orders_list.column("Order Status", width=200, anchor="center", stretch=False)
+
+        order_scrollbar = ttk.Scrollbar(self.content_page, orient="vertical", command=self.tree_orders_list.yview)
+        self.tree_orders_list.configure(yscrollcommand=order_scrollbar.set)
+        order_scrollbar.pack(side="right", fill="y")
+        self.tree_orders_list.pack(expand=True, padx=10, pady=(10,0))
+
+        order_data = self.orders_manager.show_all_orders()
+        self.load_order_data(order_data)
+
+        self.button_orders_add = ttk.Button(self.content_page, text="Add Order", bootstyle="SUCCESS", command=self.show_orderadd)
+        self.button_orders_add.pack(pady=(10, 5))
+
+        self.button_orders_edit = ttk.Button(self.content_page, text="Edit Order", bootstyle="WARNING", command=None)
+        self.button_orders_edit.pack(pady=(5, 5))
+
+        self.button_orders_delete = ttk.Button(self.content_page, text="Delete Order", bootstyle="DANGER", command=None)
+        self.button_orders_delete.pack(pady=(5,50))
+
+    def load_order_data(self, order_data): 
+        for item in self.tree_orders_list.get_children(): 
+            self.tree_orders_list.delete(item)
+
+        for order in order_data:
+            self.tree_orders_list.insert('','end', values=order)
+
+    def search_orders(self):
+        search_text = self.order_search_var.get().lower()
+        order_data = self.orders_manager.show_all_orders()
+
+        filtered_orders = [
+            order for order in order_data
+            if any(search_text in str(value).lower() for value in order)]
+        
+        self.load_order_data(filtered_orders)
+
+    def clear_orders_search(self): 
+        
+        self.order_search_var.set("")
+        order_data = self.orders_manager.show_all_orders()
+        self.load_order_data(order_data)
+            
+    def show_orderadd(self): 
+        
+        for widget in self.content_page.winfo_children(): 
+            widget.destroy()
+
+        self.title("Add Order")
+        self.geometry("900x500")
+
+        frame = ttk.Frame(self.content_page)
+        frame.pack(pady=20, padx=20, fill="both", expand=True)
+
+        self.label_orderadd_client = ttk.Label(frame, text="Select Client: ")
+        self.label_orderadd_client.grid(row=0, column=0, padx=10, pady=10, sticky="e")
+
+        client_data = self.orders_manager.get_all_clients()
+        self.client_map = {f"{client[1]} (ID: {client[0]})": client[0] for client in client_data}
+
+        client_options= list(self.client_map.keys())
+        self.combo_orderadd_id = ttk.Combobox(frame, values=client_options, state="readonly")
+        self.combo_orderadd_id.grid(row=0, column=1, padx=10, pady=10)
+        self.combo_orderadd_id.bind("<<ComboboxSelected>>", self.update_address_field)
+
+        self.label_orderadd_date = ttk.Label(frame, text="Order Date: ")
+        self.label_orderadd_date.grid(row=1, column=0, padx=10, pady=10, sticky ="e")
+
+        self.date_orderadd_date = ttk.DateEntry(frame, bootstyle="DANGER", dateformat="%d-%m-%Y", startdate=datetime.today())
+        self.date_orderadd_date.grid(row=1, column=1, padx=10, pady=10)
+
+        self.label_orderadd_estimateddelivery = ttk.Label(frame, text="Estimated Delivery Date: ")
+        self.label_orderadd_estimateddelivery.grid(row=2, column=0, padx=10, pady=10, sticky="e")
+
+        self.date_orderadd_estimateddelivery = ttk.DateEntry(frame, bootstyle="SUCCESS", dateformat="%d-%m-%Y", startdate=datetime.today())
+        self.date_orderadd_estimateddelivery.grid(row=2, column=1, pady=10, padx=10)
+
+        self.label_orderadd_orderstatus = ttk.Label(frame, text="Order Status: ")
+        self.label_orderadd_orderstatus.grid(row=3, column=0, padx=10, pady=10, sticky="e")
+
+        self.combo_orderadd_orderstatus = ttk.Combobox(frame, values=["PENDING", "PROCESSING", "SHIPPED", "DELIVERED"])
+        self.combo_orderadd_orderstatus.set("PENDING")
+        self.combo_orderadd_orderstatus.grid(row=3, column=1, padx=10, pady=10)
+
+        self.label_orderadd_paymentstatus = ttk.Label(frame, text="Payment Status")
+        self.label_orderadd_paymentstatus.grid(row=4, column=0, padx=10, pady=10, sticky="e")
+
+        self.combo_orderadd_paymentstatus = ttk.Combobox(frame, values=["UNPAID", "PAID"], state="readonly")
+        self.combo_orderadd_paymentstatus.set("UNPAID")
+        self.combo_orderadd_paymentstatus.grid(row=4, column=1, pady=10, padx=10)
+
+        self.label_orderadd_address = ttk.Label(frame, text="Delivery Address: ")
+        self.label_orderadd_address.grid(row=5, column=0, padx=10, pady=10, sticky="e")
+
+        self.label_orderadd_address_value = ttk.Label(frame, text="", bootstyle="info")
+        self.label_orderadd_address_value.grid(row=5, column=1, padx=10, pady=10, sticky="w")
+
+        self.button_orderadd_save = ttk.Button(frame, text="Save Order", bootstyle="SUCCESS", command=self.save_order)
+        self.button_orderadd_save.grid(row=6, column=1, pady=20, padx=10, sticky="w")
+
+        self.button_orderadd_back = ttk.Button(frame, text="Back", bootstyle="DANGER", command=self.show_order_window)
+        self.button_orderadd_back.grid(row=6, column=0, pady=20, padx=10, sticky="e")
+
+    def update_address_field(self, event):
+
+        selected_client = self.combo_orderadd_id.get()
+        if not selected_client: 
+            return
+        
+        client_id = self.client_map[selected_client]
+        address = self.orders_manager.get_client_address(client_id)
+        self.label_orderadd_address_value.config(text=address)
+
+    def save_order(self):
+        try:
+            selected_client_display = self.combo_orderadd_id.get()
+            client_id = self.client_map[selected_client_display]
+            order_status = self.combo_orderadd_orderstatus.get()
+            payment_status = self.combo_orderadd_paymentstatus.get()
+            delivery_address = self.label_orderadd_address_value.cget("text")
+            estimated_deliverydate = self.date_orderadd_estimateddelivery.entry.get()
+            total_price = 0
+
+            self.orders_manager.add_order(client_id, total_price, delivery_address, estimated_deliverydate, payment_status, order_status)
+            self.show_order_window()
+
+        except Exception as error: 
+            messagebox.showerror("Error", f"Error {error}")
+
 if __name__ == "__main__":
     NEA_tables.create_tables()
 
     app = Application()
     app.mainloop()
-        
+
 
 
 
