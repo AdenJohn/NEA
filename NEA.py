@@ -277,6 +277,10 @@ class OrdersManager:
         address = cursor.fetchone()
         return address[0] if address else ""
 
+    def update_inventory_quantity(self, product_id, quantity_sold):
+        update_query = """UPDATE Inventory SET quantity = quantity - %s WHERE product_id = %s"""
+        self.database_manager.execute_command(update_query, (quantity_sold, product_id))
+
 class Application(ttk.Window): 
     def __init__(self): 
         super().__init__(title="Fashion Match (Sales Order Processing System)")
@@ -1035,6 +1039,7 @@ class Application(ttk.Window):
             self.tree_orders_list.delete(item)
 
         for order in order_data:
+
             self.tree_orders_list.insert('','end', values=order)
 
     def search_orders(self):
@@ -1107,11 +1112,14 @@ class Application(ttk.Window):
         self.label_orderadd_address_value = ttk.Label(frame, text="", bootstyle="info")
         self.label_orderadd_address_value.grid(row=5, column=1, padx=10, pady=10, sticky="w")
 
+        self.button_orderadd_products = ttk.Button(frame, text="Add Products", command=None)
+        self.button_orderadd_products.grid(row=6, column=1, padx=10, pady=10, sticky="w")
+
         self.button_orderadd_save = ttk.Button(frame, text="Save Order", bootstyle="SUCCESS", command=self.save_order)
-        self.button_orderadd_save.grid(row=6, column=1, pady=20, padx=10, sticky="w")
+        self.button_orderadd_save.grid(row=7, column=1, pady=20, padx=10, sticky="w")
 
         self.button_orderadd_back = ttk.Button(frame, text="Back", bootstyle="DANGER", command=self.show_order_window)
-        self.button_orderadd_back.grid(row=6, column=0, pady=20, padx=10, sticky="e")
+        self.button_orderadd_back.grid(row=7, column=0, pady=20, padx=10, sticky="e")
 
     def update_address_field(self, event):
 
@@ -1130,14 +1138,119 @@ class Application(ttk.Window):
             order_status = self.combo_orderadd_orderstatus.get()
             payment_status = self.combo_orderadd_paymentstatus.get()
             delivery_address = self.label_orderadd_address_value.cget("text")
-            estimated_deliverydate = self.date_orderadd_estimateddelivery.entry.get()
+            estimated_deliverydate = self.date_orderadd_estimateddelivery.get_date().strftime('%Y-%m-%d')
+
             total_price = 0
+            self.current_order_id = self.orders_manager.add_order(client_id, total_price, delivery_address, estimated_deliverydate, payment_status, order_status)
 
             self.orders_manager.add_order(client_id, total_price, delivery_address, estimated_deliverydate, payment_status, order_status)
             self.show_order_window()
 
         except Exception as error: 
             messagebox.showerror("Error", f"Error {error}")
+
+    def product_selection_window(self):
+
+        self.select_productwindow = ttk.Toplevel(self)
+        self.select_productwindow.title("Add products to order")
+        self.select_productwindow.geometry("900x600")
+
+        frame = ttk.Frame(self.select_productwindow)
+        frame.pack(pady=20, padx=20, fill="both", expand=True)
+
+        columns = ("Product ID", "Product Name", "Price", "Available Quantity", "Select Quantity")
+        self.select_products_list = ttk.Treeview(frame, columns=columns, show="headings")
+
+        self.select_products_list.heading("Product ID", text="Product ID", anchor="center")
+        self.select_products_list.heading("Product Name", text="Product Name", anchor="center")
+        self.select_products_list.heading("Price", text="Price", anchor="center")
+        self.select_products_list.heading("Available Quantity", text="Available Quantity", anchor="center")
+        self.select_products_list.heading("Selected Quantity", text="Selected Quantity", anchor="center")
+
+        self.select_products_list.column("Product ID", width=100, text="Product ID", anchor="center", stretch=False)
+        self.select_products_list.column("Product Name", width=200, text="Product Name",anchor="center",stretch=False)
+        self.select_products_list.column("Price", width=150, text="Product ID",anchor="center",stretch=False)
+        self.select_products_list.column("Available Quantity", width=150, text="Product ID",anchor="center",stretch=False)
+        self.select_products_list.column("Selected Quantity", width=100, text="Product ID",anchor="center",stretch=False)
+
+        selected_product_scrollbar = ttk.Scrollbar(frame, orient='vertical', command=self.select_products_list.yview)
+        self.select_products_list.configure(yscrollcommand=selected_product_scrollbar.set)
+        selected_product_scrollbar.pack(side="right", fill="y")
+        self.select_products_list.pack(pady=(10,0),padx=10 expand=True)
+
+        product_data = self.orders_manager.get_all_products()
+        self.quantity_entries = {}
+
+        for product in product_data: 
+            product_id = product[0]
+
+            self.select_products_list.insert('','end', iid=str(product_id), values=(product_id, product[1], product[2], product[3], "0"))
+            
+            quantity_entry = ttk.Entry(self.select_products_list)
+            self.select_products_list.set(str(product_id), "Select Quantity", "0")
+            quantity_entry.insert(0,"0")
+
+            self.quantity_entries[product_id] = quantity_entry
+
+            self.select_products_list.bind("<ButtonRelease-1>", self.position_quantity_entry)
+
+            self.button_select_confirm = ttk.Button(frame, text="Add Selected Products", bootstyle="SUCCESS", command=self.confirm_product_selection)
+            self.button_select_confirm.pack(pady=10)
+
+    def position_quantity_entry(self, event): 
+
+        selected_item = self.select_products_list.selection()
+        if selected_item: 
+            item_id = selected_item[0]
+            column = self.select_products_list.identify_column(event.x)
+
+            if column == "#5": 
+                quantity_entry = self.quantity_entries[int(item_id)]
+                quantity_entry.place_forget()
+                quantity_entry.place(x=event.x_root - self.select_products_list.winfo_rootx() - 50, 
+                        y=event.y_root - self.select_products_list.winfo_rooty() + 5, 
+                        width=150)
+
+
+    def confirm_product_selection(self): 
+
+        selected_items = []
+        insufficient_stock = []
+
+        for item in self.select_products_list.get_children(): 
+            values = self.select_products_list.item(item, "values")
+            product_id = int(values[0])
+            product_name = str(values[1])
+            price = float(values[2])
+            available_quantity = int(values[3])
+            selected_quantity = int(self.quantity_entries[product_id].get())
+
+            if selected_quantity > 0: 
+                if selected_quantity > available_quantity: 
+                    insufficient_stock.append(f"{product_name} (Available: {available_quantity}, Selected: {selected_quantity})")
+                else: 
+                    item_total_price = price * selected_quantity
+                    selected_items.append((product_id, selected_quantity, item_total_price))
+
+
+        if insufficient_stock: 
+            messagebox.showwarning("Insufficient Stock", f"Not enough stock for: {', '.join(insufficient_stock)}")
+            return
+        
+        if hasattr(self, "current_order_id") and self.current_order_id: 
+            for product_id, quantity, item_total in selected_items: 
+                self.orders_manager.add_order_item(self.current_order_id, product_id, quantity, item_total)
+                self.orders_manager.update_inventory_quantity(product_id, quantity)
+
+            messagebox.showinfo("Success", f"Products successfully added to Order #{self.current_order_id}")
+            self.select_productwindow.destroy()
+
+
+
+
+
+
+
 
 if __name__ == "__main__":
     NEA_tables.create_tables()
