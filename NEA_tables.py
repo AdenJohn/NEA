@@ -55,7 +55,7 @@ def create_tables():
         create_orders_table = """CREATE TABLE IF NOT EXISTS Orders(
             order_id SERIAL PRIMARY KEY, 
             client_id INT REFERENCES Clients(client_id),
-            order_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
+            order_date DATE DEFAULT CURRENT_DATE, 
             total_price DECIMAL(10,2), 
             order_status VARCHAR(50) DEFAULT 'PENDING',
             payment_status VARCHAR(50) DEFAULT 'Unpaid', 
