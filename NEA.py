@@ -88,7 +88,7 @@ class UserManager: #a class to add users through registration and check their cr
         
         try: 
             self.database_manager.execute_query(query_register, paramaters)
-            print(f"User {first_name} {last_name} has been registered")
+            messagebox.showinfo("Registration Successful",f"User {first_name} {last_name} has been registered")
         except Exception as error: 
             messagebox.showerror("Error", f"Error while registration: {error}")
         
@@ -105,7 +105,7 @@ class UserManager: #a class to add users through registration and check their cr
                 bytes_salt = bytes.fromhex(stored_salt)
                 
                 if self.verify_password(password, stored_salt, stored_password): 
-                    print(f"User {first_name} {last_name} authenticated successfully")
+                    messagebox.showinfo("Login",f"User {first_name} {last_name} authenticated successfully")
                     return first_name, last_name
             return None
         except Exception as error:
@@ -117,8 +117,87 @@ class UserManager: #a class to add users through registration and check their cr
         
         return login_hash == stored_password
     
+#A class for adding, editing and retrieving clients
+class ClientManager: 
+    def __init__(self, database_manager): 
+        self.database_manager = database_manager
+
+    def add_client(self, client_name, client_email, client_phone,
+                   address_line, city, country, full_address): 
         
-    
+        full_address = f"{address_line}, {city}, {country}"
+
+        query_add_client = """INSERT INTO Clients(client_name, client_email, client_phone,
+        address_line, city, country, full_address)
+        VALUES(%s,%s,%s,%s,%s,%s,%s)""" 
+
+        paramaters = (client_name, client_email, client_phone,
+                      address_line, city, country, full_address)
+        
+        try: 
+            self.database_manager.execute_query(query_add_client, paramaters)
+            messagebox.showinfo("SUCCESS",f"Client {client_name} added successfully")
+        except Exception as error: 
+            messagebox.showerror("ERROR",f"Error adding client: {error}")
+
+    def edit_clients(self, client_id, client_name=None, client_email=None, client_phone=None,
+                     address_line=None, city=None, country=None):
+        
+        query_edit_client = """
+            UPDATE Clients
+            SET client_name = COALESCE(%s, client_name),
+                client_email = COALESCE(%s, client_email),
+                client_phone = COALESCE(%s, client_phone),
+                address_line = COALESCE(%s, address_line), 
+                city = COALESCE(%s, city),
+                country = COALESCE(%s, country)
+                full_address = COALESCE(%s, full_address)
+            WHERE client_id = %s"""
+        
+        full_address = f"{address_line}, {city}, {country}" if address_line and city and country else None
+
+        paramaters = (client_name, client_email, client_phone,
+                      address_line, city, country, full_address, client_id)
+        
+        try: 
+            self.database_manager.execute_query(query_edit_client, paramaters)
+            messagebox.showinfo("SUCCESS", f"Client {client_id} has been updated successfully")
+        except Exception as error: 
+            messagebox.showerror("ERROR",f"Error updating client: {error}")
+
+    def get_clients(self): 
+        
+        query_get_clients = """SELECT * FROM Clients"""
+        try: 
+            cursor = self.database_manager.execute_query(query_get_clients)
+            return cursor.fetchall()
+        except Exception as error: 
+            messagebox.showerror("ERROR",f"Error retrieving clients: {error}")
+            return []
+
+#class for addding, editing and retreiving proucts to and from the inventory
+class InventoryManager: 
+    def __init__(self, database_manager): 
+        self.database_manager = database_manager
+
+    #adds the product
+    def add_product(self, sku, product_name, product_price, stock_quantity):
+        query_add_product = """INSERT INTO Inventory(sku, product_name, product_price, stock_quantity)
+                                VALUES(%s,%s,%s,%s)"""
+        
+        paramaters = (sku, product_name, product_price, stock_quantity)
+
+        try: 
+            self.database_manager.execute_query(query_add_product, paramaters)
+            messagebox.showinfo("Add Product", f"{product_name}, sku: {sku} added successfully")
+        except Exception as error: 
+            messagebox.showerror("Error", f"Error adding product {error}")
+
+    def edit_product(self, sku=None, product_name=None, product_price=None, stock_quantity=None): 
+        query_edit_product = """UPDATE Inventory
+            SET """
+        
+
         
             
         
@@ -134,7 +213,3 @@ class UserManager: #a class to add users through registration and check their cr
             
         
         
-
-
-
-
