@@ -21,9 +21,13 @@ class DatabaseManager:
         self.port = port
         self.conn = self.connect_to_database()
         
-        if self.conn: 
-            self.create_tables('C:/Users/clust/Desktop/NEA_folder/NEA_coding/DDL_Script_NEA.sql')
-        
+        if self.conn:
+            #for windows
+            #self.create_tables('C:/Users/clust/Desktop/NEA_folder/NEA_coding/DDL_Script_NEA.sql')
+            #for mac
+            self.create_tables('/Users/adenjohn/Desktop/School/Computer Science/NEA-main/DDL_Script.sql')
+
+
     def connect_to_database(self): #performs the actual connection
         
         try: 
@@ -172,7 +176,7 @@ class ClientManager:
                 client_phone = COALESCE(%s, client_phone),
                 address_line = COALESCE(%s, address_line), 
                 city = COALESCE(%s, city),
-                country = COALESCE(%s, country)
+                country = COALESCE(%s, country),
                 full_address = COALESCE(%s, full_address)
             WHERE client_id = %s"""
         
@@ -186,6 +190,14 @@ class ClientManager:
             messagebox.showinfo("SUCCESS", f"Client {client_id} has been updated successfully")
         except Exception as error: 
             messagebox.showerror("ERROR",f"Error updating client: {error}")
+
+    def delete_client(self, client_id):
+        query_delete_client = """DELETE FROM Clients WHERE client_id = %s""" 
+
+        try:
+            self.database_manager.execute_query(query_delete_client, client_id)
+        except Exception as error: 
+            messagebox.showerror("Error", f"Error while deleting client with id: {client_id}")
 
     def get_clients(self): 
         
@@ -204,8 +216,7 @@ class InventoryManager:
 
     #adds the product
     def add_product(self, sku, product_name, product_price, stock_quantity):
-        query_add_product = """INSERT INTO Inventory(sku, product_name, product_price, stock_quantity)
-                                VALUES(%s,%s,%s,%s)"""
+        query_add_product = """INSERT INTO Inventory(sku, product_name, product_price, stock_quantity)VALUES(%s,%s,%s,%s)"""
         
         paramaters = (sku, product_name, product_price, stock_quantity)
 
@@ -398,7 +409,10 @@ class Application(ttk.Window):
             self.button_logout.pack(side="left", pady=10, padx=5)
             
             self.home_button = ttk.Button(self.navigation_frame, text="Home", bootstyle="SUCCESS",
-                                          command=self.show_home_page)
+                                          command=lambda: self.show_home_page(*self.current_user))
+            
+            self.home_button.pack(side='left', pady=10, padx=5)
+
         else: 
             pass
         
@@ -427,7 +441,9 @@ class Application(ttk.Window):
         register_page = RegisterPage(parent=self.content_frame, controller=self, database_manager=self.database_manager)
         register_page.show()       
         
-    def show_home_page(self, first_name, last_name):
+    def show_home_page(self, first_name=None, last_name=None):
+        if first_name is None or last_name is None and self.current_user: 
+            first_name, last_name = self.current_user
         self.update_navigation_buttons(logged_in=True)
         for widget in self.content_frame.winfo_children(): 
             widget.destroy()
@@ -451,6 +467,15 @@ class Application(ttk.Window):
     def logout(self): 
         self.current_user = None
         self.show_main_page()
+
+    def show_clients_page(self): 
+        self.update_navigation_buttons(logged_in=True)
+
+        for widget in self.content_frame.winfo_children(): 
+            widget.destroy()
+
+        clients_page = ClientsPage(parent=self.content_frame, controller=self, database_manager=self.database_manager)
+        clients_page.show()
         
 class MainPage(BasePage): 
     def __init__(self, parent, controller, database_manager): 
@@ -500,7 +525,7 @@ class LoginPage(BasePage):
         self.entry_password = ttk.Entry(frame, show="*")
         self.entry_password.grid(row=1, column=1, pady=10, padx=5)
         
-        self.button_back = ttk.Button(frame, text="Back", bootstyle="WARNING", command=self.controller.show_main_page)
+        self.button_back = ttk.Button(frame, text="↲", bootstyle="WARNING",command=self.controller.show_main_page)
         self.button_back.grid(row=2, column=0, pady=10, padx=5, sticky="e")
         
         self.button_login = ttk.Button(frame, text="Login", bootstyle="SUCCESS", command=self.login_user)
@@ -608,7 +633,7 @@ class HomePage(BasePage):
         self.button_inventory = ttk.Button(self, text="Inventory", command=self.controller.show_inventory_page)
         self.button_inventory.pack(pady=(20, 5))
         
-        self.button_clients = ttk.Button(self, text="Clients", bootstyle="DANGER", command=None)
+        self.button_clients = ttk.Button(self, text="Clients", bootstyle="DANGER", command=self.controller.show_clients_page)
         self.button_clients.pack(pady=(0, 5))
         
         self.button_orders = ttk.Button(self, text="Orders", bootstyle="WARNING", command=None)
@@ -701,7 +726,8 @@ class InventoryPage(BasePage):
         item_values = self.tree.item(selected_item)['values']
         
         EditProductWindow(self, self.inventory_manager, item_values, self.refresh_inventory_data)
-    
+
+
     def delete_product(self): 
         
         selected_item = self.tree.selection()
@@ -718,7 +744,8 @@ class InventoryPage(BasePage):
             self.refresh_inventory_data()
             messagebox.showinfo("Success", "Product deleted successfully.")
             
-        
+            self.refresh_inventory_data()
+
     def refresh_inventory_data(self):
 
         self.inventory_data = self.inventory_manager.get_inventory()
@@ -760,10 +787,10 @@ class AddProductWindow(tk.Toplevel):
 
         
         save_button = ttk.Button(self, text="Save", command=self.save_product)
-        save_button.grid(row=4, column=0, padx=5, pady=10)
+        save_button.grid(row=4, column=1, padx=5, pady=10)
 
         cancel_button = ttk.Button(self, text="Cancel", command=self.destroy)
-        cancel_button.grid(row=4, column=1, padx=5, pady=10)
+        cancel_button.grid(row=4, column=0, padx=5, pady=10)
 
     def save_product(self):
         
@@ -829,10 +856,10 @@ class EditProductWindow(tk.Toplevel):
 
         
         save_button = ttk.Button(self, text="Save", command=self.save_changes)
-        save_button.grid(row=4, column=0, padx=5, pady=10)
+        save_button.grid(row=4, column=1, padx=5, pady=10)
 
         cancel_button = ttk.Button(self, text="Cancel", command=self.destroy)
-        cancel_button.grid(row=4, column=1, padx=5, pady=10)
+        cancel_button.grid(row=4, column=0, padx=5, pady=10)
 
     def save_changes(self):
         
@@ -854,16 +881,288 @@ class EditProductWindow(tk.Toplevel):
             self.inventory_manager.edit_product(product_id, sku, name, price, quantity)
             self.refresh_callback()
             self.destroy()
+            
         except ValueError:
             messagebox.showerror("Error", "Invalid price or quantity.")
+
+#the clients page UI
+class ClientsPage(BasePage): 
+    def __init__(self, parent, controller, database_manager): 
+        super().__init__(parent, controller, database_manager)
+        self.client_manager = ClientManager(self.database_manager)
+        self.create_widgets()
+    #creating the widgets
+    def create_widgets(self):
+        for widget in self.winfo_children(): 
+            widget.destroy()
+
+        search_frame = ttk.Frame(self)
+        search_frame.pack(fill="x", padx=10, pady=5)
+
+        self.search_var = tk.StringVar()
+        search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
+        search_entry.pack(side="left", padx=(0, 10))
+        search_entry.bind("<KeyRelease>", self.update_treeview)
+    
+
+        add_button = ttk.Button(search_frame, text="Add Client", command=self.add_client)
+        add_button.pack(side="left", padx=5)
+
+        edit_button = ttk.Button(search_frame, text="Edit Client", command=self.edit_client)
+        edit_button.pack(side="left", padx=5)
+
+        delete_button = ttk.Button(search_frame, text="Delete Client", command=self.delete_client)
+        delete_button.pack(side="left", padx=5)
+
+        columns = ("Client ID", "Client Name", "Email", "Phone", "Address")
+        self.tree = ttk.Treeview(self, columns=columns, show='headings')
+
+        for col in columns: 
+            self.tree.heading(col, text=col, command=lambda _col=col: self.sort_treeview(_col, False))
+            self.tree.column(col, width=150, anchor='center')
+
+        self.tree.pack(fill="both", expand=True, padx=10, pady=5)
+
+        scrollbar = ttk.Scrollbar(self, orient='vertical', command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side='right', fill='y')
+
+        self.client_data = self.client_manager.get_clients()
+        self.filtered_data = self.client_data.copy()
+        self.populate_treeview(self.filtered_data)
+
+    def populate_treeview(self, data): 
+        for item in self.tree.get_children(): 
+            self.tree.delete(item)
+
+        for row in data: 
+            self.tree.insert('', 'end', values=row)
+
+    def sort_treeview(self, col, reverse): 
+        col_index = {
+            "Client ID": 0, 
+            "Client Name": 1, 
+            "Email": 2, 
+            "Phone": 3,
+            "Address": 5,  
+        }[col]
+
+        self.filtered_data.sort(key=lambda: self.sort_treeview(col, not reverse))
+    
+    def update_treeview(self, event=None): 
+        search_term = self.search_var.get().lower()
+
+        self.filtered_data = [
+            row for row in self.client_data
+            if search_term in str(row).lower()
+        ]
+
+        self.populate_treeview(self.filtered_data)
+
+    def add_client(self): 
+        AddClientWindow(self, self.client_manager, self.refresh_client_data)
+
+    def edit_client(self): 
+        selected_item = self.tree.selection()
+        if not selected_item: 
+            messagebox.showwarning("Warning", "Please select a client to edit")
+            return
+    
+        item_values = self.tree.item(selected_item)['values']
+
+        EditClientWindow(self, self.client_manager, item_values, self.refresh_client_data)
+
+    def delete_client(self): 
+        selected_item = self.tree.selection()
+
+        if not selected_item: 
+            messagebox.showwarning("Warning", "Please select a client to delete")
+            return
+        
+        item_values = self.tree.item(selected_item)['values']
+
+        confirm = messagebox.askyesno("Confirm Delete", f"Are you sre you want to delete client {item_values[1]}?")
+        if confirm: 
+            self.client_manager.delete_client(item_values[0])
+            self.refresh_client_data()
+            messagebox.showinfo("Success", "Client deleted successfully")
+
+    
+    def refresh_client_data(self): 
+        self.client_data = self.client_manager.get_clients()
+        self.update_treeview()        
+
+
+class AddClientWindow(tk.Toplevel): 
+    def __init__(self, parent, client_manager, refresh_callback): 
+        super().__init__(parent)
+        self.title("Add Client")
+        self.client_manager = client_manager
+        self.refresh_callback = refresh_callback
+        self.create_widgets()
+        self.transient(parent)
+        self.grab_set()
+        self.focus_set()
+        self.wait_window(self)
+
+    def create_widgets(self): 
+
+        #client name
+        self.label_name = ttk.Label(self, text="Client Name:")
+        self.label_name.grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        self.entry_name = ttk.Entry(self)
+        self.entry_name.grid(row=0, column=1, padx=5, pady=5)
+
+        #client email
+        self.label_email = ttk.Label(self, text="Email:")
+        self.label_email.grid(row=1, column=0, padx=5, pady=5, sticky='e')
+        self.entry_email = ttk.Entry(self)
+        self.entry_email.grid(row=1, column=1, padx=5, pady=5)
+
+        #phone number
+        self.label_phone = ttk.Label(self, text="Phone No:")
+        self.label_phone.grid(row=2, column=0, padx=5, pady=5)
+        self.entry_phone = ttk.Entry(self)
+        self.entry_phone.grid(row=2, column=1, padx=5, pady=5, sticky='e')
+
+        #address ln 1
+        self.label_address = ttk.Label(self, text="Address Ln1:")
+        self.label_address.grid(row=3, column=0, padx=5, pady=5)
+        self.entry_address = ttk.Entry(self)
+        self.entry_address.grid(row=3, column=1, padx=5, pady=5, sticky='e')
+
+        #city
+        self.label_city = ttk.Label(self, text="City:")
+        self.label_city.grid(row=4, column=0, padx=5, pady=5)
+        self.entry_city = ttk.Entry(self)
+        self.entry_city.grid(row=4, column=1, padx=5, pady=5, sticky='e')
+
+        #Country
+        self.label_country = ttk.Label(self, text="Country")
+        self.label_country.grid(row=5, column=0, padx=5, pady=5)
+        self.entry_country = ttk.Entry(self)
+        self.entry_country.grid(row=5, column=1, padx=5, pady=5, stick='e')
+
+        save_button = ttk.Button(self, text="Save", command=self.save_client)
+        save_button.grid(row=6, column=1, padx=5, pady=5)
+
+        cancel_button = ttk.Button(self, text="Cancel", command=self.destroy)
+        cancel_button.grid(row=6, column=0, padx=5, pady=5)
+
+    def save_client(self):
+
+        client_name = self.entry_name.get().strip()
+        email = self.entry_email.get().strip()
+        phone = self.entry_phone.get().strip()
+        address_line = self.entry_phone.get().strip()
+        city = self.entry_city.get().strip()
+        country = self.entry_country.get().strip()
+
+        if not client_name or not email or not phone or not address_line or not city or not country:
+            messagebox.showerror("Error", f"All fields are required")
+            return
+        
+        full_address = f"{address_line}, {city}, {country}"
+
+        try: 
+            self.client_manager.add_client(client_name, email, phone, address_line, city, country, full_address)
+            self.refresh_callback()
+            self.destroy()
+        except Exception as error: 
+            messagebox.showerror("Error", f"Failed to add client: {error}")
+
+class EditClientWindow(tk.Toplevel): 
+    def __init__(self, parent, client_manager, item_values, refresh_callback): 
+        super().__init__(parent)
+        self.title("Edit Client")
+        self.client_manager = client_manager
+        self.item_values = item_values
+        self.refresh_callback = refresh_callback
+        self.create_widgets()
+        self.transient(parent)
+        self.grab_set()
+        self.focus_set()
+        self.wait_window(self)
+
+    def create_widgets(self): 
+        self.client_id = self.item_values[0]
+
+        self.label_name = ttk.Label(self, text="Client Name: ")
+        self.label_name.grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        self.entry_name = ttk.Entry(self)
+        self.entry_name.grid(row=0, column=1, padx=5, pady=5)
+        self.entry_name.insert(0, self.item_values[1])
+
+        self.label_email = ttk.Label(self, text="Email: ")
+        self.label_email.grid(row=1, column=0, padx=5, pady=5, sticky='e')
+        self.entry_email = ttk.Entry(self)
+        self.entry_email.grid(row=1, column=1, padx=5, pady=5)
+        self.entry_email.insert(0, self.item_values[2])
+
+        self.label_phone = ttk.Label(self, text="Phone: ")
+        self.label_phone.grid(row=2, column=0, padx=5, pady=5, sticky='e')
+        self.entry_phone = ttk.Entry(self)
+        self.entry_phone.grid(row=2, column=1, padx=5, pady=5)
+        self.entry_phone.insert(0, self.item_values[3])
+
+        self.label_addressline = ttk.Label(self, text="Address Line: ")
+        self.label_addressline.grid(row=3, column=0, padx=5, pady=5, sticky='e')
+        self.entry_addressline = ttk.Entry(self)
+        self.entry_addressline.grid(row=3, column=1, padx=5, pady=5)
+        self.entry_addressline.insert(0, self.item_values[4])
+
+        self.label_city = ttk.Label(self, text="City:")
+        self.label_city.grid(row=4, column=0, padx=5, pady=5, sticky='e')
+        self.entry_city = ttk.Entry(self)
+        self.entry_city.grid(row=4, column=1, padx=5, pady=5)
+        self.entry_city.insert(0, self.item_values[5])
+
+        self.label_country = ttk.Label(self, text="Country:")
+        self.label_country.grid(row=5, column=0, padx=5, pady=5, sticky='e')
+        self.entry_country = ttk.Entry(self)
+        self.entry_country.grid(row=5, column=1, padx=5, pady=5)
+        self.entry_country.insert(0, self.item_values[6])
+        
+
+        save_button = ttk.Button(self, text="Save", command=self.save_changes)
+        save_button.grid(row=6, column=1, padx=5, pady=10)
+
+        cancel_button = ttk.Button(self, text="Cancel", bootstyle="WARNING", command=self.destroy)
+        cancel_button.grid(row=6, column=0)
+
+    def save_changes(self): 
+
+        client_name = self.entry_name.get().strip()
+        email = self.entry_email.get().strip()
+        phone = self.entry_phone.get().strip()
+        address_line = self.entry_addressline.get().strip()
+        city = self.entry_city.get().strip()
+        country = self.entry_country.get().strip()
+
+        if not client_name or not email or not phone or not address_line or not city or not country: 
+            messagebox.showerror("Error", "All fields are required")
+            return
+        
+        full_address = f"{address_line}, {city}, {country}"
+
+        try: 
+            self.client_manager.edit_clients(
+                client_id = self.client_id,
+                client_name = client_name,
+                client_email = email,
+                client_phone = phone, 
+                address_line = address_line, 
+                city = city, 
+                country=country, 
+                full_address = full_address)
+            self.refresh_callback()
+            messagebox.showinfo("Success", "Client updated succcessfully")
+            self.destroy()
+        except Exception as error: 
+            messagebox.showerror("Error", f"Failed to update client: {error}")
+
 
             
 if __name__ == "__main__": 
     app = Application()
     app.mainloop()
-            
-          
-    
-            
-    
-    
