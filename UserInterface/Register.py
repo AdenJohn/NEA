@@ -10,6 +10,8 @@ class RegisterPage(BasePage):
 
         self.hide_navigation_buttons()
 
+
+
         self.main_frame.columnconfigure(0, weight=1)
         self.main_frame.columnconfigure(1, weight=1)
 
@@ -56,7 +58,7 @@ class RegisterPage(BasePage):
 
         if UserManager.register_user(employee_code, first_name, last_name, email, password): 
             Messagebox.show_info(f"Registered User: {first_name} {last_name}, {employee_code} successfully.")
-
+            self.navigate_to("LandingPage")
         else: 
             Messagebox.show_error("Error while registering")
         
